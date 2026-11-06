@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import com.aura.browser.core.database.dao.BookmarkDao
 import com.aura.browser.core.database.dao.DownloadDao
 import com.aura.browser.core.database.dao.HistoryDao
@@ -12,6 +13,7 @@ import com.aura.browser.core.database.dao.SitePermissionDao
 import com.aura.browser.core.database.dao.TabDao
 import com.aura.browser.core.database.dao.VideoPlaybackPositionDao
 import com.aura.browser.core.database.entity.BookmarkEntity
+import com.aura.browser.core.database.entity.DownloadConverters
 import com.aura.browser.core.database.entity.DownloadEntity
 import com.aura.browser.core.database.entity.HistoryEntity
 import com.aura.browser.core.database.entity.PlaylistEntity
@@ -38,6 +40,7 @@ import javax.inject.Singleton
     version = 1,
     exportSchema = false,
 )
+@TypeConverters(DownloadConverters::class)
 abstract class AuraDatabase : RoomDatabase() {
     abstract fun tabDao(): TabDao
     abstract fun bookmarkDao(): BookmarkDao

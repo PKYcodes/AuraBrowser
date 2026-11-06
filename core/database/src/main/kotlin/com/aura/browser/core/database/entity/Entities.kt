@@ -3,6 +3,7 @@ package com.aura.browser.core.database.entity
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.TypeConverter
 
 @Entity(
     tableName = "browser_tabs",
@@ -52,6 +53,15 @@ enum class DownloadStatus {
     COMPLETED,
     FAILED,
     CANCELLED,
+}
+
+class DownloadConverters {
+    @TypeConverter
+    fun fromDownloadStatus(status: DownloadStatus): String = status.name
+
+    @TypeConverter
+    fun toDownloadStatus(name: String): DownloadStatus =
+        runCatching { DownloadStatus.valueOf(name) }.getOrDefault(DownloadStatus.QUEUED)
 }
 
 @Entity(
