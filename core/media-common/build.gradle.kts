@@ -16,7 +16,6 @@ dependencies {
     api(libs.androidx.media3.exoplayer.hls)
     api(libs.androidx.media3.session)
     api(libs.androidx.media3.ui)
-    api(libs.androidx.media3.ui.compose)
     api(libs.androidx.media3.common)
     implementation(libs.kotlinx.coroutines.android)
 }
