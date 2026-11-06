@@ -1,0 +1,2 @@
+-keep class org.mozilla.geckoview.** { *; }
+-keep class com.aura.browser.** { *; }

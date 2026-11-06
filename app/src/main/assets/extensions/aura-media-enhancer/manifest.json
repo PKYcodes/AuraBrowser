@@ -1,0 +1,28 @@
+{
+  "manifest_version": 2,
+  "name": "Aura Media & Background Enhancer",
+  "version": "1.0.0",
+  "description": "Keeps HTML5 video/audio active in background tabs and provides clean mobile theater styling.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "aura-media-enhancer@aura.browser",
+      "strict_min_version": "115.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtu.be/*",
+        "<all_urls>"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "geckoViewAddons"
+  ]
+}
