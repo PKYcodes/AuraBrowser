@@ -27,13 +27,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK Licenses & Install Build Tools 35.0.0
+      - name: Accept Android SDK Licenses & Install Components
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle 8.10.2 with Dependency Caching
         uses: gradle/actions/setup-gradle@v4
@@ -68,7 +65,7 @@ jobs:
 
       - name: Create Automatic GitHub Release with APK
         if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master' || startsWith(github.ref, 'refs/tags/v'))
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
           name: "Aura Browser ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}"
