@@ -12,10 +12,6 @@ data class YouTubeDeepLinkResult(
     val isShorts: Boolean = false,
 )
 
-/**
- * Safely parses shared text or ACTION_VIEW URLs from other Android apps
- * (including youtu.be short links, youtube.com/watch, youtube.com/shorts, and music.youtube.com).
- */
 @Singleton
 class YouTubeIntentResolver @Inject constructor() {
 
@@ -29,7 +25,7 @@ class YouTubeIntentResolver @Inject constructor() {
         "www.youtube-nocookie.com",
     )
 
-    private val urlExtractorRegex = Regex("(https?://[^\\s"<>]+)")
+    private val urlExtractorRegex = Regex("(https?://[^\\s\"<>]+)")
 
     fun extractAndNormalize(rawSharedTextOrUrl: String?): YouTubeDeepLinkResult? {
         if (rawSharedTextOrUrl.isNullOrBlank()) return null

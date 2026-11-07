@@ -27,7 +27,7 @@ class AuraDownloadValidator @Inject constructor() {
             .ifBlank { "aura_download_${System.currentTimeMillis()}.bin" }
 
         val candidate = (rawFileName ?: fallbackName)
-            .replace(Regex("[\\\\/:*?"<>|]"), "_")
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .replace("..", "_")
             .trim()
             .ifBlank { "aura_download.bin" }
