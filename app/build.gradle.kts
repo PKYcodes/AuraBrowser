@@ -10,6 +10,21 @@ android {
         applicationId = "com.aura.browser"
         versionCode = 1
         versionName = "1.0.0"
+
+        ndk {
+            // Strip x86, x86_64, and armeabi-v7a native engines; keep arm64-v8a for Android phones
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // Compress Mozilla GeckoView's libxul.so inside the APK (~672 MB -> ~75 MB)
+            useLegacyPackaging = true
+        }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
     }
 
     buildTypes {
@@ -20,6 +35,7 @@ android {
         }
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
