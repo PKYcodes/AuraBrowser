@@ -68,6 +68,7 @@ import com.aura.browser.core.designsystem.component.GlassPillButton
 import com.aura.browser.core.designsystem.theme.AuraColors
 import com.aura.browser.feature.browser.engine.AuraGeckoEngineManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -91,6 +92,7 @@ class BrowserViewModel @Inject constructor(
         .map { it.size.coerceAtLeast(1) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 1)
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     val isCurrentUrlBookmarked: StateFlow<Boolean> = sessionState
         .map { it.currentUrl }
         .flatMapLatest { bookmarkDao.observeIsBookmarked(it) }
@@ -166,7 +168,6 @@ fun BrowserScreen(
             .fillMaxSize()
             .background(AuraColors.DeepBackground),
     ) {
-        // Top Glass Address Bar & Security Shield
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -177,7 +178,6 @@ fun BrowserScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                // HTTPS Security Indicator & Privacy Shield Shortcut
                 IconButton(
                     onClick = onOpenPrivacy,
                     modifier = Modifier.size(38.dp),
@@ -196,7 +196,6 @@ fun BrowserScreen(
                     )
                 }
 
-                // Glass Omnibox Input Field
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -262,7 +261,6 @@ fun BrowserScreen(
             }
         }
 
-        // Security or Offline Notice Banner
         state.securityNotice?.let { notice ->
             GlassCard(
                 modifier = Modifier
@@ -285,7 +283,6 @@ fun BrowserScreen(
             }
         }
 
-        // Main Mozilla GeckoView Surface
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -300,6 +297,7 @@ fun BrowserScreen(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                             )
+                            releaseSession()
                             setSession(activeSession)
                         }
                     },
@@ -314,7 +312,6 @@ fun BrowserScreen(
             }
         }
 
-        // Bottom Glass Browser Action Toolbar
         Row(
             modifier = Modifier
                 .fillMaxWidth()

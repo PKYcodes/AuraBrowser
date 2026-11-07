@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
@@ -30,6 +31,7 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.StorageController
+import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -53,11 +55,6 @@ data class ActiveBrowserSessionState(
     val securityNotice: String? = null,
 )
 
-/**
- * Process-wide singleton managing [GeckoRuntime] and active [GeckoSession] instances per tab.
- * Prevents memory leaks by binding a single [GeckoRuntime] to application Context and closing
- * [GeckoSession] instances cleanly when tabs are closed.
- */
 @Singleton
 class AuraGeckoEngineManager @Inject constructor(
     @ApplicationContext private val appContext: Context,
@@ -78,10 +75,6 @@ class AuraGeckoEngineManager @Inject constructor(
     private val _sessionState = MutableStateFlow(ActiveBrowserSessionState())
     val sessionState: StateFlow<ActiveBrowserSessionState> = _sessionState.asStateFlow()
 
-    /**
-     * Lazily initializes a single process-lifetime [GeckoRuntime] instance.
-     * Per Mozilla GeckoView documentation, GeckoRuntime may only be created once per process.
-     */
     @Synchronized
     fun getOrCreateRuntime(): GeckoRuntime {
         geckoRuntime?.let { return it }
@@ -91,6 +84,7 @@ class AuraGeckoEngineManager @Inject constructor(
             .javaScriptEnabled(true)
             .automaticFontSizeAdjustment(true)
             .enterpriseRootsEnabled(false)
+            .allowInsecureConnections(GeckoRuntimeSettings.HTTPS_ONLY)
             .contentBlocking(
                 ContentBlocking.Settings.Builder()
                     .antiTracking(
@@ -99,7 +93,6 @@ class AuraGeckoEngineManager @Inject constructor(
                     )
                     .safeBrowsing(ContentBlocking.SafeBrowsing.DEFAULT)
                     .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
-                    .httpsOnlyMode(ContentBlocking.HttpsOnlyMode.HTTPS_ONLY_ENABLED)
                     .build()
             )
             .build()
@@ -355,9 +348,9 @@ class AuraGeckoEngineManager @Inject constructor(
             TrackingProtectionPreset.CUSTOM -> ContentBlocking.AntiTracking.DEFAULT or ContentBlocking.AntiTracking.STP
         }
         runtime.settings.contentBlocking.setAntiTracking(antiTrackingFlags)
-        runtime.settings.contentBlocking.setHttpsOnlyMode(
-            if (httpsOnly) ContentBlocking.HttpsOnlyMode.HTTPS_ONLY_ENABLED
-            else ContentBlocking.HttpsOnlyMode.HTTPS_ONLY_DISABLED
+        runtime.settings.setAllowInsecureConnections(
+            if (httpsOnly) GeckoRuntimeSettings.HTTPS_ONLY
+            else GeckoRuntimeSettings.ALLOW_ALL
         )
     }
 
@@ -407,18 +400,18 @@ class AuraGeckoEngineManager @Inject constructor(
             override fun onLoadRequest(
                 session: GeckoSession,
                 request: GeckoSession.NavigationDelegate.LoadRequest,
-            ): GeckoResult<org.mozilla.geckoview.AllowOrDeny> {
+            ): GeckoResult<AllowOrDeny> {
                 val uri = request.uri
                 if (uri.startsWith("javascript:", ignoreCase = true) || uri.startsWith("vbscript:", ignoreCase = true)) {
-                    return GeckoResult.fromValue(org.mozilla.geckoview.AllowOrDeny.DENY)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
-                return GeckoResult.fromValue(org.mozilla.geckoview.AllowOrDeny.ALLOW)
+                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
             override fun onLoadError(
                 session: GeckoSession,
                 uri: String?,
-                error: org.mozilla.geckoview.WebRequestError,
+                error: WebRequestError,
             ): GeckoResult<String>? {
                 if (tabId == _sessionState.value.activeTabId) {
                     _sessionState.value = _sessionState.value.copy(

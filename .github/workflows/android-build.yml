@@ -39,7 +39,7 @@ jobs:
           cache-read-only: false
 
       - name: Build & Assemble Debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleDebug --console=plain
 
       - name: Verify Compiled Debug APK Exists
         run: |
@@ -48,7 +48,7 @@ jobs:
 
       - name: Run Unit Tests Across Modules
         if: always()
-        run: gradle testDebugUnitTest --continue --stacktrace || true
+        run: gradle testDebugUnitTest --continue --console=plain || true
 
       - name: Upload Unit Test Reports
         if: always()
@@ -66,7 +66,7 @@ jobs:
 
       - name: Create Automatic GitHub Release with APK
         if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master' || startsWith(github.ref, 'refs/tags/v'))
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
           name: "Aura Browser ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}"
