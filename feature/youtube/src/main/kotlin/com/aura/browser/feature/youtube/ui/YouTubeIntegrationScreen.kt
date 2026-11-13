@@ -37,7 +37,6 @@ import com.aura.browser.core.designsystem.component.GlassCard
 import com.aura.browser.core.designsystem.component.GlassPillButton
 import com.aura.browser.core.designsystem.component.GlassTopBar
 import com.aura.browser.core.designsystem.theme.AuraColors
-import com.aura.browser.feature.browser.engine.AuraGeckoEngineManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -48,15 +47,10 @@ import javax.inject.Inject
 @HiltViewModel
 class YouTubeViewModel @Inject constructor(
     private val preferencesDataSource: AuraPreferencesDataSource,
-    private val engineManager: AuraGeckoEngineManager,
 ) : ViewModel() {
 
     val settings: StateFlow<AuraUserSettings> = preferencesDataSource.userSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuraUserSettings())
-
-    fun launchYouTubeDestination(url: String) {
-        engineManager.loadInputOrUrl(url)
-    }
 
     fun setBackgroundPlay(enabled: Boolean) {
         viewModelScope.launch { preferencesDataSource.setYoutubeBackgroundPlay(enabled) }
@@ -66,9 +60,6 @@ class YouTubeViewModel @Inject constructor(
         viewModelScope.launch { preferencesDataSource.setYoutubeHideShorts(enabled) }
     }
 
-    fun setTheaterDefault(enabled: Boolean) {
-        viewModelScope.launch { preferencesDataSource.setYoutubeTheaterDefault(enabled) }
-    }
 }
 
 @Composable
@@ -116,7 +107,6 @@ fun YouTubeIntegrationScreen(
                             isPrimary = true,
                             accentColor = AuraColors.YouTubeRed,
                             onClick = {
-                                viewModel.launchYouTubeDestination("https://m.youtube.com")
                                 onOpenInBrowser("https://m.youtube.com")
                             },
                         )
@@ -125,7 +115,6 @@ fun YouTubeIntegrationScreen(
                             icon = Icons.Default.Subscriptions,
                             onClick = {
                                 val url = "https://m.youtube.com/feed/subscriptions"
-                                viewModel.launchYouTubeDestination(url)
                                 onOpenInBrowser(url)
                             },
                         )
@@ -140,7 +129,6 @@ fun YouTubeIntegrationScreen(
                             icon = Icons.Default.Headphones,
                             onClick = {
                                 val url = "https://music.youtube.com"
-                                viewModel.launchYouTubeDestination(url)
                                 onOpenInBrowser(url)
                             },
                         )
@@ -149,7 +137,6 @@ fun YouTubeIntegrationScreen(
                             icon = Icons.Default.AccountCircle,
                             onClick = {
                                 val url = "https://accounts.google.com/ServiceLogin?service=youtube"
-                                viewModel.launchYouTubeDestination(url)
                                 onOpenInBrowser(url)
                             },
                         )
@@ -178,15 +165,8 @@ fun YouTubeIntegrationScreen(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     SettingToggleRow(
-                        title = "Clean Theater Layout Mode",
-                        subtitle = "Expands the video player container to full viewport width via built-in WebExtension CSS.",
-                        checked = settings.youtubeTheaterModeDefault,
-                        onCheckedChange = viewModel::setTheaterDefault,
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    SettingToggleRow(
                         title = "Hide Distracting Shorts Shelf",
-                        subtitle = "Collapses optional Shorts carousels on the mobile web home feed.",
+                        subtitle = "Best-effort: hides Shorts shelves on youtube.com. Applies to pages you open next.",
                         checked = settings.youtubeHideShortsShelf,
                         onCheckedChange = viewModel::setHideShorts,
                     )

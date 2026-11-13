@@ -37,8 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.aura.browser.core.database.dao.TabDao
-import com.aura.browser.core.database.entity.TabEntity
+import com.aura.browser.feature.browser.engine.BrowserTab
 import com.aura.browser.core.designsystem.component.GlassCard
 import com.aura.browser.core.designsystem.component.GlassPillButton
 import com.aura.browser.core.designsystem.component.GlassTopBar
@@ -52,15 +51,14 @@ import javax.inject.Inject
 
 @HiltViewModel
 class TabsViewModel @Inject constructor(
-    tabDao: TabDao,
     private val engineManager: AuraGeckoEngineManager,
 ) : ViewModel() {
 
-    val allTabs: StateFlow<List<TabEntity>> = tabDao.observeAllTabs()
+    val allTabs: StateFlow<List<BrowserTab>> = engineManager.tabs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun selectTab(tab: TabEntity) {
-        engineManager.switchToTab(tab)
+    fun selectTab(tab: BrowserTab) {
+        engineManager.switchToTab(tab.id)
     }
 
     fun createNewTab(isPrivate: Boolean) {
@@ -92,8 +90,8 @@ fun TabsScreen(
             .background(AuraColors.DeepBackground),
     ) {
         GlassTopBar(
-            title = if (showPrivateOnly) "Private Sessions" else "Open Browser Tabs",
-            subtitle = "${filteredTabs.size} active ${if (showPrivateOnly) "private" else "standard"} session(s)",
+            title = if (showPrivateOnly) "Private Tabs" else "Tabs",
+            subtitle = "${filteredTabs.size} ${if (showPrivateOnly) "private" else "standard"} tab(s)",
             actions = {
                 GlassPillButton(
                     text = if (showPrivateOnly) "Private" else "Standard",
@@ -123,7 +121,7 @@ fun TabsScreen(
             )
             if (showPrivateOnly && filteredTabs.isNotEmpty()) {
                 GlassPillButton(
-                    text = "Burn Private Tabs",
+                    text = "Close all private tabs",
                     icon = Icons.Default.DeleteSweep,
                     onClick = { viewModel.closeAllPrivateTabs() },
                 )
@@ -182,7 +180,7 @@ fun TabsScreen(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = if (tab.isActive) "Active GeckoSession" else "Suspended Session",
+                        text = if (tab.isActive) "Current tab" else if (tab.isPrivate) "Private • not saved" else "Background",
                         style = MaterialTheme.typography.labelMedium.copy(
                             color = if (tab.isActive) AuraColors.SecureGreen else AuraColors.TextMuted,
                         ),

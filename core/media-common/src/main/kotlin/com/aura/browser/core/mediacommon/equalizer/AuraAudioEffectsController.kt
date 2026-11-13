@@ -32,6 +32,11 @@ class AuraAudioEffectsController @Inject constructor() {
                 eq.getPresetName(idx.toShort()).toString()
             }.ifEmpty { _state.value.presets }
 
+            if (presetCount > 0) {
+                // Re-apply the chosen preset: the audio session id changes between media items.
+                eq.usePreset(_state.value.selectedPresetIndex.coerceIn(0, presetCount - 1).toShort())
+            }
+
             val bass = BassBoost(0, audioSessionId).apply {
                 enabled = true
                 if (strengthSupported) {
@@ -54,6 +59,13 @@ class AuraAudioEffectsController @Inject constructor() {
                 audioSessionId = audioSessionId,
             )
         }
+    }
+
+    /** Applies the persisted equalizer configuration (called once when the playback service starts). */
+    fun restoreSavedConfig(presetIndex: Int, bassStrength: Int) {
+        _state.value = _state.value.copy(selectedPresetIndex = presetIndex.coerceAtLeast(0))
+        selectPreset(presetIndex)
+        setBassBoostStrength(bassStrength)
     }
 
     fun selectPreset(presetIndex: Int) {

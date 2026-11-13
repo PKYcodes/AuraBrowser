@@ -132,7 +132,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Mozilla GeckoView Engine • Media3 Studio • Glassmorphism UI",
+                    text = "Private browsing 2022 Music 2022 Video",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

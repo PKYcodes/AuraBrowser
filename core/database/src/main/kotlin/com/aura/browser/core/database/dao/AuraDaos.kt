@@ -31,6 +31,24 @@ interface TabDao {
     @Query("UPDATE browser_tabs SET isActive = CASE WHEN id = :tabId THEN 1 ELSE 0 END, lastAccessedAt = CASE WHEN id = :tabId THEN :timestamp ELSE lastAccessedAt END")
     suspend fun setActiveTab(tabId: String, timestamp: Long = System.currentTimeMillis())
 
+    @Query("SELECT * FROM browser_tabs ORDER BY lastAccessedAt DESC")
+    suspend fun getAllTabs(): List<TabEntity>
+
+    @Query("SELECT * FROM browser_tabs WHERE id = :tabId LIMIT 1")
+    suspend fun getTabById(tabId: String): TabEntity?
+
+    @Query("UPDATE browser_tabs SET url = :url WHERE id = :tabId")
+    suspend fun updateTabUrl(tabId: String, url: String)
+
+    @Query("UPDATE browser_tabs SET title = :title WHERE id = :tabId")
+    suspend fun updateTabTitle(tabId: String, title: String)
+
+    @Query("UPDATE browser_tabs SET sessionStateJson = :stateJson WHERE id = :tabId")
+    suspend fun updateSessionState(tabId: String, stateJson: String?)
+
+    @Query("UPDATE browser_tabs SET isDesktopMode = :enabled WHERE id = :tabId")
+    suspend fun updateDesktopMode(tabId: String, enabled: Boolean)
+
     @Query("DELETE FROM browser_tabs WHERE id = :tabId")
     suspend fun deleteTabById(tabId: String)
 
@@ -102,6 +120,9 @@ interface HistoryDao {
         }
     }
 
+    @Query("UPDATE browsing_history SET title = :title WHERE url = :url")
+    suspend fun updateTitleByUrl(url: String, title: String)
+
     @Query("DELETE FROM browsing_history WHERE id = :id")
     suspend fun deleteHistoryItem(id: Long)
 
@@ -114,8 +135,15 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
     fun observeDownloads(): Flow<List<DownloadEntity>>
 
+    @Query("SELECT * FROM downloads WHERE id = :id LIMIT 1")
+    suspend fun getDownload(id: Long): DownloadEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDownload(download: DownloadEntity): Long
+
+    /** Rows left in a transient state by a process death can never finish; mark them failed on launch. */
+    @Query("UPDATE downloads SET status = 'FAILED' WHERE status = 'QUEUED' OR status = 'DOWNLOADING'")
+    suspend fun markInterruptedDownloadsFailed()
 
     @Update
     suspend fun updateDownload(download: DownloadEntity)

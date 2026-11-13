@@ -38,7 +38,6 @@ data class AuraUserSettings(
     val autoEnterPipOnBackground: Boolean = true,
     val youtubeBackgroundPlayEnabled: Boolean = true,
     val youtubeHideShortsShelf: Boolean = false,
-    val youtubeTheaterModeDefault: Boolean = true,
     val equalizerPresetIndex: Int = 0,
     val bassBoostStrength: Int = 250,
     val safMusicTreeUri: String? = null,
@@ -62,7 +61,6 @@ class AuraPreferencesDataSource @Inject constructor(
         val AUTO_ENTER_PIP = booleanPreferencesKey("auto_enter_pip")
         val YT_BACKGROUND_PLAY = booleanPreferencesKey("yt_background_play")
         val YT_HIDE_SHORTS = booleanPreferencesKey("yt_hide_shorts")
-        val YT_THEATER_DEFAULT = booleanPreferencesKey("yt_theater_default")
         val EQ_PRESET_INDEX = intPreferencesKey("eq_preset_index")
         val BASS_BOOST_STRENGTH = intPreferencesKey("bass_boost_strength")
         val SAF_MUSIC_TREE_URI = stringPreferencesKey("saf_music_tree_uri")
@@ -93,7 +91,6 @@ class AuraPreferencesDataSource @Inject constructor(
             autoEnterPipOnBackground = prefs[Keys.AUTO_ENTER_PIP] ?: true,
             youtubeBackgroundPlayEnabled = prefs[Keys.YT_BACKGROUND_PLAY] ?: true,
             youtubeHideShortsShelf = prefs[Keys.YT_HIDE_SHORTS] ?: false,
-            youtubeTheaterModeDefault = prefs[Keys.YT_THEATER_DEFAULT] ?: true,
             equalizerPresetIndex = prefs[Keys.EQ_PRESET_INDEX] ?: 0,
             bassBoostStrength = prefs[Keys.BASS_BOOST_STRENGTH] ?: 250,
             safMusicTreeUri = prefs[Keys.SAF_MUSIC_TREE_URI],
@@ -156,10 +153,6 @@ class AuraPreferencesDataSource @Inject constructor(
 
     suspend fun setYoutubeHideShorts(enabled: Boolean) {
         dataStore.edit { it[Keys.YT_HIDE_SHORTS] = enabled }
-    }
-
-    suspend fun setYoutubeTheaterDefault(enabled: Boolean) {
-        dataStore.edit { it[Keys.YT_THEATER_DEFAULT] = enabled }
     }
 
     suspend fun setEqualizerConfig(presetIndex: Int, bassStrength: Int) {

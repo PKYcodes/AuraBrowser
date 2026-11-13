@@ -25,11 +25,28 @@ import javax.inject.Singleton
 /**
  * Native Android Picture-in-Picture (PiP) controller supporting API 26+ through API 35.
  * Implements:
- * - Aspect ratio clamping within Android's valid [0.418410, 2.390000] bounds
+ * - Aspect ratio clamping within Android's valid [1/2.39, 2.39] bounds
  * - Custom RemoteAction controls (Previous, Play/Pause, Next)
  * - Smooth transition sourceRectHint and Android 12+ (API 31) setAutoEnterEnabled
  * - BroadcastReceiver for PiP window media action intents
  */
+/** Pure aspect-ratio helper (unit-testable without Android classes). */
+object PipAspectRatio {
+    private const val MIN_RATIO = 100.0 / 239.0
+    private const val MAX_RATIO = 239.0 / 100.0
+
+    /** Clamps a ratio to Android's accepted PiP range [100:239, 239:100]; invalid sizes fall back to 16:9. */
+    fun clamp(width: Int, height: Int): Pair<Int, Int> {
+        if (width <= 0 || height <= 0) return 16 to 9
+        val ratio = width.toDouble() / height.toDouble()
+        return when {
+            ratio < MIN_RATIO -> 100 to 239
+            ratio > MAX_RATIO -> 239 to 100
+            else -> width to height
+        }
+    }
+}
+
 @Singleton
 class AuraPipController @Inject constructor(
     @ApplicationContext private val appContext: Context,
@@ -46,6 +63,9 @@ class AuraPipController @Inject constructor(
     private val _isInPipMode = MutableStateFlow(false)
     val isInPipMode: StateFlow<Boolean> = _isInPipMode.asStateFlow()
 
+    /** Overrides what the PiP play/pause button does (e.g. to control web media instead of the local player). */
+    var playPauseHandler: (() -> Unit)? = null
+
     private var sourceViewBounds: Rect? = null
     private var receiverRegistered = false
 
@@ -54,7 +74,7 @@ class AuraPipController @Inject constructor(
             if (intent?.action != ACTION_PIP_MEDIA_CONTROL) return
             when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {
                 CONTROL_PREVIOUS -> mediaControllerManager.skipPrevious()
-                CONTROL_PLAY_PAUSE -> mediaControllerManager.togglePlayPause()
+                CONTROL_PLAY_PAUSE -> (playPauseHandler ?: mediaControllerManager::togglePlayPause).invoke()
                 CONTROL_NEXT -> mediaControllerManager.skipNext()
             }
         }
@@ -85,16 +105,25 @@ class AuraPipController @Inject constructor(
         sourceViewBounds = bounds
     }
 
+    fun clampAspectRatio(width: Int, height: Int): Pair<Int, Int> = PipAspectRatio.clamp(width, height)
+
     /**
-     * Clamps aspect ratio numerator/denominator to Android's required range [100:239, 239:100].
+     * Keeps the activity's PiP parameters current so Android 12+ can enter PiP automatically
+     * when the user leaves the app (`setAutoEnterEnabled`).
      */
-    fun clampAspectRatio(width: Int, height: Int): Pair<Int, Int> {
-        if (width <= 0 || height <= 0) return 16 to 9
-        val ratio = width.toDouble() / height.toDouble()
-        return when {
-            ratio < 0.42 -> 100 to 239
-            ratio > 2.38 -> 239 to 100
-            else -> width to height
+    fun updateParams(
+        activity: Activity,
+        width: Int,
+        height: Int,
+        isPlaying: Boolean,
+        autoEnter: Boolean,
+    ) {
+        if (!isPipSupported(activity)) return
+        registerActionReceiver()
+        runCatching {
+            activity.setPictureInPictureParams(
+                buildPipParams(width = width, height = height, isPlaying = isPlaying, autoEnterEnabled = autoEnter)
+            )
         }
     }
 
@@ -102,7 +131,7 @@ class AuraPipController @Inject constructor(
         width: Int = 16,
         height: Int = 9,
         isPlaying: Boolean = true,
-        autoEnterEnabled: Boolean = true,
+        autoEnterEnabled: Boolean = false,
     ): PictureInPictureParams {
         val (clampedW, clampedH) = clampAspectRatio(width, height)
         val builder = PictureInPictureParams.Builder()
@@ -112,7 +141,7 @@ class AuraPipController @Inject constructor(
         sourceViewBounds?.let { builder.setSourceRectHint(it) }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(autoEnterEnabled && isPlaying)
+            builder.setAutoEnterEnabled(autoEnterEnabled)
             builder.setSeamlessResizeEnabled(true)
         }
         return builder.build()

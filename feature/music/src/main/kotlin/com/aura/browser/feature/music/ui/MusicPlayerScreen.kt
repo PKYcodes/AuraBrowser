@@ -61,6 +61,8 @@ import com.aura.browser.core.designsystem.component.GlassTopBar
 import com.aura.browser.core.designsystem.theme.AuraColors
 import com.aura.browser.core.mediacommon.controller.AuraMediaControllerManager
 import com.aura.browser.core.mediacommon.equalizer.AuraAudioEffectsController
+import com.aura.browser.core.permissions.AuraPermissionGroup
+import com.aura.browser.core.permissions.AuraPermissionManager
 import com.aura.browser.core.mediacommon.model.LocalAudioTrack
 import com.aura.browser.core.mediacommon.model.RepeatModeOption
 import com.aura.browser.feature.music.scanner.LocalAudioScanner
@@ -80,7 +82,20 @@ class MusicPlayerViewModel @Inject constructor(
     val audioEffectsController: AuraAudioEffectsController,
     private val playlistDao: PlaylistDao,
     private val preferencesDataSource: AuraPreferencesDataSource,
+    private val permissionManager: AuraPermissionManager,
 ) : ViewModel() {
+
+    private val _hasAudioAccess = MutableStateFlow(permissionManager.isPermissionGroupGranted(AuraPermissionGroup.AUDIO_MEDIA))
+    val hasAudioAccess: StateFlow<Boolean> = _hasAudioAccess.asStateFlow()
+
+    /** Android permissions the screen should request (audio library + media notification on Android 13+). */
+    fun missingPermissions(): Array<String> =
+        permissionManager.permissionsToRequest(AuraPermissionGroup.AUDIO_MEDIA, AuraPermissionGroup.NOTIFICATIONS)
+
+    fun onPermissionsResult() {
+        _hasAudioAccess.value = permissionManager.isPermissionGroupGranted(AuraPermissionGroup.AUDIO_MEDIA)
+        scanMediaStoreLibrary()
+    }
 
     private val _tracks = MutableStateFlow<List<LocalAudioTrack>>(emptyList())
     val tracks: StateFlow<List<LocalAudioTrack>> = _tracks.asStateFlow()
@@ -94,11 +109,12 @@ class MusicPlayerViewModel @Inject constructor(
     }
 
     fun scanMediaStoreLibrary() {
+        if (!permissionManager.isPermissionGroupGranted(AuraPermissionGroup.AUDIO_MEDIA)) return
         viewModelScope.launch {
             val scanned = scanner.scanDeviceAudioLibrary()
-            if (scanned.isNotEmpty()) {
-                _tracks.value = scanned
-            }
+            // Keep folders the user imported through the document picker.
+            val imported = _tracks.value.filter { current -> scanned.none { it.uri == current.uri } && current.uri.startsWith("content://com.android.externalstorage") }
+            _tracks.value = (scanned + imported).distinctBy { it.uri }
         }
     }
 
@@ -164,8 +180,15 @@ fun MusicPlayerScreen(
         }
     }
 
+    val hasAudioAccess by viewModel.hasAudioAccess.collectAsStateWithLifecycle()
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { viewModel.onPermissionsResult() }
+
+    // Ask once on first visit; afterwards the card below offers a manual retry.
     LaunchedEffect(Unit) {
-        viewModel.scanMediaStoreLibrary()
+        val missing = viewModel.missingPermissions()
+        if (missing.isNotEmpty()) permissionLauncher.launch(missing) else viewModel.scanMediaStoreLibrary()
     }
 
     Column(
@@ -174,8 +197,8 @@ fun MusicPlayerScreen(
             .background(AuraColors.DeepBackground),
     ) {
         GlassTopBar(
-            title = "Aura Music Studio",
-            subtitle = "Media3 ExoPlayer • Background MediaSessionService",
+            title = "Music",
+            subtitle = "${tracks.size} track(s) • plays in the background",
             actions = {
                 IconButton(onClick = { showEqualizerPanel = !showEqualizerPanel }) {
                     Icon(
@@ -199,6 +222,28 @@ fun MusicPlayerScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            if (!hasAudioAccess) {
+                item {
+                    GlassCard(borderColor = AuraColors.WarningAmber) {
+                        Text(text = "Allow access to your music", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Aura needs permission to read audio files on this device. You can also pick a folder instead.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            GlassPillButton(
+                                text = "Allow access",
+                                onClick = { permissionLauncher.launch(viewModel.missingPermissions()) },
+                                isPrimary = true,
+                            )
+                            GlassPillButton(text = "Pick folder", onClick = { safFolderLauncher.launch(null) })
+                        }
+                    }
+                }
+            }
+
             // Now Playing Glass Deck
             item {
                 GlassCard(isHighlighted = true, cornerRadius = 24.dp) {

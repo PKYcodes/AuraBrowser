@@ -1,5 +1,6 @@
 package com.aura.browser.feature.filemanager.ui
 
+import kotlinx.coroutines.flow.first
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -75,6 +76,16 @@ class FileManagerViewModel @Inject constructor(
     private val _currentRootLabel = MutableStateFlow("App Scoped Downloads & Media")
     val currentRootLabel: StateFlow<String> = _currentRootLabel.asStateFlow()
 
+    /** Reopens the folder the user picked last time, if its permission is still valid. */
+    fun restoreLastTreeOrScopedDirectories() {
+        viewModelScope.launch {
+            val saved = preferencesDataSource.userSettings.first().safDownloadsTreeUri
+            val uri = saved?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+            val stillPermitted = uri != null && context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+            if (uri != null && stillPermitted) inspectSafTree(uri) else loadScopedAppDirectories()
+        }
+    }
+
     fun loadScopedAppDirectories() {
         viewModelScope.launch {
             val entries = withContext(Dispatchers.IO) {
@@ -145,7 +156,7 @@ fun FileManagerScreen(
     }
 
     LaunchedEffect(Unit) {
-        viewModel.loadScopedAppDirectories()
+        viewModel.restoreLastTreeOrScopedDirectories()
     }
 
     Column(
@@ -154,11 +165,11 @@ fun FileManagerScreen(
             .background(AuraColors.DeepBackground),
     ) {
         GlassTopBar(
-            title = "Aura File Manager",
+            title = "Files",
             subtitle = rootLabel,
             actions = {
                 GlassPillButton(
-                    text = "Browse SAF Folder",
+                    text = "Choose folder",
                     icon = Icons.Default.FolderOpen,
                     isPrimary = true,
                     onClick = { safTreeLauncher.launch(null) },

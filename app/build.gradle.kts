@@ -1,20 +1,35 @@
+import java.util.Properties
+
 plugins {
     id("aura.android.application")
     id("aura.android.hilt")
 }
 
+// Release signing: provide keystore.properties (git-ignored) with storeFile, storePassword,
+// keyAlias and keyPassword. Without it, release builds are produced unsigned.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.aura.browser"
+
+    signingConfigs {
+        if (keystoreProperties.containsKey("storeFile")) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.aura.browser"
         versionCode = 1
         versionName = "1.0.0"
-
-        ndk {
-            // Strip x86, x86_64, and armeabi-v7a native engines; keep arm64-v8a for Android phones
-            abiFilters += listOf("arm64-v8a")
-        }
     }
 
     packaging {
@@ -32,8 +47,17 @@ android {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            ndk {
+                // x86_64 additionally lets debug builds run on desktop emulators.
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
         }
         release {
+            ndk {
+                // Phones only: GeckoView's native engine is large, so ship a single ABI.
+                abiFilters += listOf("arm64-v8a")
+            }
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

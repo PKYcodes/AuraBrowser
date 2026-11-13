@@ -1,30 +1,60 @@
-# Aura Browser — All-in-One GeckoView Browser & Media Studio for Android
+# Aura Browser
 
-Aura Browser (`com.aura.browser`) is a modular, privacy-first Android browser powered by [Mozilla GeckoView](https://firefox-source-docs.mozilla.org/mobile/android/geckoview/), [AndroidX Media3 / ExoPlayer](https://developer.android.com/media/media3), native [Android Picture-in-Picture](https://developer.android.com/guide/topics/ui/picture-in-picture), and a Custom Glassmorphism [Jetpack Compose](https://developer.android.com/develop/ui/compose) interface.
+A privacy-first Android browser built on [Mozilla GeckoView](https://firefox-source-docs.mozilla.org/mobile/android/geckoview/),
+with a built-in local music and video player. Kotlin, Jetpack Compose, Hilt, Room, DataStore and
+[Media3](https://developer.android.com/media/media3).
 
-## Key Capabilities
-1. **Mozilla GeckoView Browser (`:feature:browser`, `:feature:tabs`)**: Multi-tab browsing, private browsing sessions, desktop mode, offline HTML fallback pages, and tracker blocking.
-2. **YouTube Web & Share Integration (`:feature:youtube`)**: Opens `youtube.com`, `youtu.be`, `youtube.com/shorts`, and `music.youtube.com` links shared from other Android apps, supports standard Google OAuth2 sign-in, and keeps web media active in the background via `suspendMediaWhenInactive(false)` and the built-in `aura-media-enhancer@aura.browser` WebExtension.
-3. **Media3 Local Music Player (`:feature:music`, `:core:media-common`)**: Scans local audio via `MediaStore` and Storage Access Framework (SAF), plays in the background via `AuraMediaPlaybackService` (`MediaSessionService`), handles audio focus and headphone disconnects, and provides hardware `Equalizer` and `BassBoost` controls.
-4. **Media3 Local Video Cinema (`:feature:video`, `:feature:pip`)**: Plays MP4, MKV, WebM, DASH, and HLS streams with double-tap seek gestures, playback speed control (`0.5x`–`2.0x`), external `.vtt`/`.srt` subtitle loading, automatic resume checkpoints, and native Android Picture-in-Picture (`PictureInPictureParams`).
-5. **Firefox WebExtensions Manager (`:feature:extensions`)**: Wraps GeckoView's [WebExtensionController](https://mozilla.github.io/geckoview/javadoc/mozilla-central/org/mozilla/geckoview/WebExtensionController.html) to manage built-in extensions and install signed Android-compatible `.xpi` add-ons (such as uBlock Origin, Dark Reader, and Privacy Badger) from `addons.mozilla.org`.
+> **Status:** pre-release. The code has been reviewed and refactored thoroughly but has **not yet been compiled
+> or tested on a device** in the environment where it was last edited. Run the build below first and expect to
+> fix a few compile errors — see [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md).
 
-## Build Instructions
+## Features
 
-### Option A: GitHub Actions CI/CD (Recommended Primary Build Environment)
-1. Push this repository to GitHub (`main`, `master`, or `develop` branch).
-2. GitHub Actions automatically triggers `.github/workflows/android-build.yml`, which provisions **Temurin JDK 17**, **Android SDK Platform 35**, and **Gradle 8.10.2**.
-3. The workflow runs `gradle testDebugUnitTest --stacktrace` and `gradle :app:assembleDebug --stacktrace`, then uploads `app/build/outputs/apk/debug/app-debug.apk` as the `aura-browser-debug-apk` artifact.
+| Area | What you get |
+|---|---|
+| **Browsing** | Tabs (restored after restart), private tabs that are never written to disk, desktop-site mode, find in page, long-press link/image menu, `target=_blank` / `window.open` support, JavaScript dialogs, file uploads, `<select>` pickers, HTTP auth, crash recovery |
+| **Privacy** | HTTPS-only mode, tracking-protection presets, cookie policy, per-site permission prompts (location, notifications, camera, microphone) that you can review and revoke, no analytics, optional "clear on exit" |
+| **Downloads** | Real streaming downloads with progress and cancel, SHA-256 checksum, warning before opening executable files, *Save page as PDF* |
+| **YouTube** | Share-sheet and deep-link handling, background playback with a notification, optional "hide Shorts" (built-in WebExtension) |
+| **Music** | `MediaStore` and folder (SAF) library, background playback service, equalizer and bass boost that persist |
+| **Video** | MP4/MKV/WebM/HLS/DASH, subtitles (SRT/VTT/SSA/TTML), speed control, double-tap seek, resume position, fullscreen and Picture-in-Picture |
+| **Extensions** | Built-in media extension; install from addons.mozilla.org (see limitations) |
 
-### Option B: Local Build (Android Studio / Command Line / Termux with Android SDK)
+## Build
+
+Requirements: JDK 17, Android SDK platform 35 (`ANDROID_HOME` set), Gradle 8.10+.
+
 ```bash
-# Ensure JDK 17 and Android SDK (API 35) are configured via ANDROID_HOME
+# One-time: generate the Gradle wrapper (the wrapper JAR is not checked in)
+gradle wrapper --gradle-version 8.10.2
+
 ./gradlew testDebugUnitTest
 ./gradlew :app:assembleDebug
-
-# Output Debug APK location:
-ls -lh app/build/outputs/apk/debug/app-debug.apk
-
-# Install on connected Android device (API 26+):
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+Debug builds include `arm64-v8a` and `x86_64`; release builds ship `arm64-v8a` only to keep the APK small.
+
+### Release signing
+
+Create a git-ignored `keystore.properties` in the project root:
+
+```properties
+storeFile=release.jks
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+Then run `./gradlew :app:assembleRelease`. Without that file the release APK is unsigned.
+Pushing a tag such as `v1.0.0` makes CI build and publish a release (signed when the
+`ANDROID_KEYSTORE_*` repository secrets are set).
+
+## Project layout
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for module responsibilities, threading and security decisions.
+
+## Contributing
+
+- Format with the settings in `.editorconfig`; keep modules free of dependency cycles (features never depend on each other except through `:feature:browser`).
+- Add unit tests for pure logic (URL handling, validators, ratio maths); CI runs `testDebugUnitTest` on every push and pull request.

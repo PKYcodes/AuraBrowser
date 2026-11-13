@@ -30,12 +30,14 @@ class AuraPermissionManager @Inject constructor(
                 listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
         }
-        AuraPermissionGroup.VIDEO_MEDIA -> {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                listOf(Manifest.permission.READ_MEDIA_VIDEO)
-            } else {
-                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
+        AuraPermissionGroup.VIDEO_MEDIA -> when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> listOf(
+                Manifest.permission.READ_MEDIA_VIDEO,
+                // Android 14+: the user may grant access to selected items only.
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            )
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> listOf(Manifest.permission.READ_MEDIA_VIDEO)
+            else -> listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         AuraPermissionGroup.NOTIFICATIONS -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -52,6 +54,7 @@ class AuraPermissionManager @Inject constructor(
         )
     }
 
+    /** A group counts as granted when at least one of its permissions is granted (covers partial media access). */
     fun isPermissionGroupGranted(group: AuraPermissionGroup): Boolean {
         val perms = requiredAndroidPermissions(group)
         if (perms.isEmpty()) return true
@@ -59,4 +62,15 @@ class AuraPermissionManager @Inject constructor(
             ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
         }
     }
+
+    /** Android permission strings that still need to be requested for the given groups. */
+    fun permissionsToRequest(vararg groups: AuraPermissionGroup): Array<String> =
+        groups
+            .filterNot { isPermissionGroupGranted(it) }
+            .flatMap { requiredAndroidPermissions(it) }
+            .distinct()
+            .toTypedArray()
+
+    fun isGranted(androidPermission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, androidPermission) == PackageManager.PERMISSION_GRANTED
 }

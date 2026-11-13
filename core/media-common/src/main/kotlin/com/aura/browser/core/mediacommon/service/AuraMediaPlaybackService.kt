@@ -10,7 +10,14 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.aura.browser.core.datastore.AuraPreferencesDataSource
 import com.aura.browser.core.mediacommon.equalizer.AuraAudioEffectsController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -28,6 +35,11 @@ class AuraMediaPlaybackService : MediaSessionService() {
 
     @Inject
     lateinit var audioEffectsController: AuraAudioEffectsController
+
+    @Inject
+    lateinit var preferencesDataSource: AuraPreferencesDataSource
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var mediaSession: MediaSession? = null
     private var exoPlayer: ExoPlayer? = null
@@ -54,6 +66,10 @@ class AuraMediaPlaybackService : MediaSessionService() {
         })
 
         audioEffectsController.attachToAudioSession(player.audioSessionId)
+        serviceScope.launch {
+            val saved = preferencesDataSource.userSettings.first()
+            audioEffectsController.restoreSavedConfig(saved.equalizerPresetIndex, saved.bassBoostStrength)
+        }
 
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         val sessionActivityPendingIntent = launchIntent?.let {
@@ -85,6 +101,7 @@ class AuraMediaPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         audioEffectsController.release()
         mediaSession?.run {
             player.release()

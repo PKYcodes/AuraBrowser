@@ -74,8 +74,8 @@ fun SettingsScreen(
             .background(AuraColors.DeepBackground),
     ) {
         GlassTopBar(
-            title = "Aura Browser Settings",
-            subtitle = "Search Engine • Picture-in-Picture • Session Defaults",
+            title = "Settings",
+            subtitle = "Search • Browsing • Media",
         )
 
         LazyColumn(
@@ -86,7 +86,7 @@ fun SettingsScreen(
             item {
                 GlassCard {
                     Text(
-                        text = "Default Search Engine",
+                        text = "Search engine",
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
@@ -113,7 +113,7 @@ fun SettingsScreen(
             item {
                 GlassCard {
                     Text(
-                        text = "Browsing & Media Behavior",
+                        text = "Browsing & media",
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
@@ -123,8 +123,8 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Request Desktop Site by Default", style = MaterialTheme.typography.titleMedium)
-                            Text(text = "Configures new GeckoSession instances with desktop viewport and User-Agent.", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = "Request desktop sites by default", style = MaterialTheme.typography.titleMedium)
+                            Text(text = "New tabs load the desktop version of websites.", style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Switch(checked = settings.desktopSiteDefault, onCheckedChange = viewModel::setDesktopDefault)
@@ -137,8 +137,8 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Automatic Picture-in-Picture on Home Gesture", style = MaterialTheme.typography.titleMedium)
-                            Text(text = "Enters native Android PiP automatically when leaving the app while video is playing.", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = "Automatic Picture-in-Picture", style = MaterialTheme.typography.titleMedium)
+                            Text(text = "Keeps a playing video in a small window when you leave the app.", style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Switch(checked = settings.autoEnterPipOnBackground, onCheckedChange = viewModel::setAutoPip)
@@ -151,8 +151,8 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Clear Private Tabs & Cache on Exit", style = MaterialTheme.typography.titleMedium)
-                            Text(text = "Automatically purges ephemeral browsing sessions when the activity stops.", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = "Clear tabs and browsing data on exit", style = MaterialTheme.typography.titleMedium)
+                            Text(text = "Closes all tabs and removes history, cookies and cache when you close Aura. Private tabs are never saved.", style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Switch(checked = settings.clearSessionOnExit, onCheckedChange = viewModel::setClearOnExit)

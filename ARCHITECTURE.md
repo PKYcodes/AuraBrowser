@@ -1,29 +1,54 @@
-# Aura Browser — System & Module Architecture (`ARCHITECTURE.md`)
+# Architecture
 
-## 1. Architectural Principles
-Aura Browser follows Google's official [Modern Android App Architecture](https://developer.android.com/develop/ui/compose) and Mozilla's [GeckoView Embedding Architecture](https://firefox-source-docs.mozilla.org/mobile/android/geckoview/contributor/geckoview-architecture.html):
-- **Strict Multi-Module Separation**: Divided into `:build-logic`, 7 `:core:*` modules, 14 `:feature:*` modules, `:navigation`, and `:app`.
-- **Single-Process `GeckoRuntime` Singleton**: Per [Getting Started with GeckoView](https://firefox-source-docs.mozilla.org/mobile/android/geckoview/consumer/geckoview-quick-start.html), `GeckoRuntime` can only be instantiated once per process. `AuraGeckoEngineManager` (`@Singleton`) binds a single `GeckoRuntime` to the application context and manages a `ConcurrentHashMap<String, GeckoSession>` keyed by tab ID.
-- **Lifecycle-Safe `GeckoSession` Management**: Active tabs receive `GeckoSession.PRIORITY_HIGH`, background tabs drop to `GeckoSession.PRIORITY_DEFAULT`, and closing a tab explicitly calls `session.setActive(false)` and `session.close()` before removing it from Room (`TabDao`).
-- **Decoupled Background Media Service**: Local audio and video playback run through `AuraMediaPlaybackService` extending AndroidX Media3's [MediaSessionService](https://developer.android.com/media/media3), connected to Compose screens via `AuraMediaControllerManager` (`MediaController`).
+## Modules
 
-## 2. Dependency Graph Overview
 ```
-:app
- ├── :navigation
- │    └── :feature:{home,browser,tabs,bookmarks,history,downloads,youtube,music,video,pip,extensions,filemanager,privacy,settings}
- ├── :feature:browser
- │    ├── org.mozilla.geckoview:geckoview:140.0.20250707120347
- │    └── :core:{common,designsystem,database,datastore,network,permissions}
- ├── :feature:music & :feature:video
- │    ├── :core:media-common (androidx.media3:media3-{exoplayer,session,ui,ui-compose}:1.11.1)
- │    └── :feature:pip (Android PictureInPictureParams + RemoteAction Receiver)
- └── :feature:extensions
-      └── Mozilla WebExtensionController (install, ensureBuiltIn, enable, disable, uninstall)
+:app                      Application, MainActivity (intents, PiP, immersive mode), manifest
+:navigation               Navigation graph; screens ask the host to open URLs via a callback
+:core:common              Shared models, dispatcher qualifiers
+:core:designsystem        Theme, glass components, ImmersiveModeState
+:core:database            Room entities/DAOs (tabs, bookmarks, history, downloads, playlists, site permissions)
+:core:datastore           User settings (Preferences DataStore)
+:core:network             URL sanitizer, download validator, AuraDownloadManager
+:core:permissions         Runtime-permission groups and checks
+:core:media-common        Media3 playback service, controller manager, equalizer
+:feature:browser          GeckoView engine manager, prompt/permission delegates, browser UI, web-media service
+:feature:{tabs,bookmarks,history,downloads,youtube,music,video,pip,extensions,filemanager,privacy,settings,home}
 ```
 
-## 3. Security & Privacy Architecture
-- **Safe URL & Scheme Filtering (`AuraUrlSanitizer`)**: Blocks `javascript:`, `vbscript:`, `data:`, `jar:`, and `intent:` URI injection in the omnibox and inside `GeckoSession.NavigationDelegate.onLoadRequest`.
-- **HTTPS-First & Tracking Parameter Removal**: Automatically upgrades `http://` navigations to `https://` (excluding localhost/LAN) and strips `utm_*`, `fbclid`, `gclid`, `mc_cid`, `msclkid`, and `igshid` parameters.
-- **Download Validation (`AuraDownloadValidator`)**: Sanitizes path traversal sequences (`../`), computes SHA-256 checksums, and flags executable packages (`.apk`, `.dex`, `.sh`, `.so`) before opening.
-- **Private Browsing Isolation**: Private tabs set `GeckoSessionSettings.Builder().usePrivateMode(true)`, bypass `HistoryDao.recordVisit()`, and purge session caches via `StorageController.ClearFlags.ALL_CACHES` when burned.
+## Browser engine (`AuraGeckoEngineManager`)
+
+- Owns the single `GeckoRuntime` and one `GeckoSession` per tab; exposes `sessionState`, `tabs`,
+  `activeGeckoSession`, `promptQueue`, `contextMenu`, `findState`, `webMedia` and `downloadEvents` as flows.
+- **Threading:** all engine callbacks and map mutations run on the main thread (`Dispatchers.Main.immediate`).
+  Startup is serialised with a mutex so concurrent callers cannot create duplicate tabs.
+- **Persistence:** standard tabs are stored in Room (URL, title, serialised `SessionState`, debounced).
+  Private tabs live only in memory and are never persisted.
+- **Settings:** the runtime is built from, and kept in sync with, the persisted settings flow
+  (tracking protection, cookie behaviour, HTTPS-only).
+- **Dialogs and permissions:** `AuraPromptDelegate` and `AuraPermissionDelegate` translate GeckoView requests into
+  `BrowserPrompt` objects. `BrowserDialogHost` renders them; the engine never touches the UI.
+- **Memory:** background sessions are closed on severe memory pressure and restored lazily from saved state.
+
+## URL handling and security
+
+- `AuraUrlSanitizer` is used for user-entered input only: it blocks script/data/file/content/internal schemes,
+  upgrades HTTP to HTTPS (except local/private hosts) and strips tracking parameters without re-encoding the URL.
+- In-page navigation is checked by the `NavigationDelegate` (`javascript:`, `vbscript:`, `jar:`, `intent:` are denied;
+  `mailto:`/`tel:`/`sms:`/`geo:` open in the matching app after a user gesture).
+- Extension installs are limited to HTTPS links on `addons.mozilla.org`.
+- Downloads sanitise file names (path traversal, hidden files, length) and warn before opening executables.
+
+## Media
+
+- `AuraMediaPlaybackService` (Media3 `MediaSessionService`) hosts the single ExoPlayer; UI talks to it through
+  `AuraMediaControllerManager`, which queues commands until the controller is connected and ticks the position.
+- Web audio/video keeps playing in the background through `AuraWebMediaService`, a foreground service driven by
+  GeckoView's Media Session API.
+- Picture-in-Picture parameters are kept up to date from `MainActivity`; auto-enter honours the user setting and
+  applies to video only (never audio-only music).
+
+## Testing
+
+Pure logic is unit-tested: `AuraUrlSanitizerTest`, `AuraDownloadValidatorTest`, `PipAspectRatioTest`,
+`AddonUrlPolicyTest`, `YouTubeIntentResolverTest`. Engine and UI code needs instrumented tests on a device.

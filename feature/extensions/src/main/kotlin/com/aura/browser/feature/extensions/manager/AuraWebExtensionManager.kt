@@ -49,11 +49,11 @@ class AuraWebExtensionManager @Inject constructor(
                 id = "aura-media-enhancer@aura.browser",
                 name = "Aura Media & Background Enhancer",
                 version = "1.0.0",
-                description = "Built-in GeckoView extension keeping HTML5 media active across background tabs and optimizing mobile theater layout.",
+                description = "Built-in extension that keeps YouTube playing when the app is in the background and can hide the Shorts shelf.",
                 isEnabled = true,
                 isBuiltIn = true,
                 allowedInPrivateBrowsing = true,
-                permissions = listOf("activeTab", "storage", "geckoViewAddons"),
+                permissions = listOf("youtube.com", "nativeMessaging"),
             )
         )
     )
@@ -97,6 +97,8 @@ class AuraWebExtensionManager @Inject constructor(
                             runtimeExtensionsById[ext.id] = ext
                             ext.toUiModel()
                         }
+                        // The built-in extension is always reported by the runtime once registered;
+                        // keep the placeholder entry only while the runtime list is still empty.
                         if (mapped.isNotEmpty()) {
                             _extensions.value = mapped
                         }
@@ -111,8 +113,8 @@ class AuraWebExtensionManager @Inject constructor(
 
     fun installFromUrl(xpiUri: String) {
         val trimmed = xpiUri.trim()
-        if (!trimmed.startsWith("https://addons.mozilla.org/") && !trimmed.endsWith(".xpi")) {
-            _statusMessage.value = "Security policy: Only signed Mozilla Add-on (.xpi) HTTPS URLs are permitted."
+        if (!isTrustedAddonUrl(trimmed)) {
+            _statusMessage.value = "Security policy: only HTTPS links on addons.mozilla.org are permitted."
             return
         }
         _statusMessage.value = "Installing WebExtension from $trimmed..."
@@ -203,6 +205,10 @@ class AuraWebExtensionManager @Inject constructor(
         }
     }
 
+    fun clearStatusMessage() {
+        _statusMessage.value = null
+    }
+
     private fun upsertUiModel(model: InstalledExtensionModel) {
         val current = _extensions.value.toMutableList()
         val idx = current.indexOfFirst { it.id == model.id }
@@ -224,4 +230,12 @@ class AuraWebExtensionManager @Inject constructor(
             downloadUri = meta.downloadUrl,
         )
     }
+}
+
+/** Only signed add-ons served by Mozilla over HTTPS may be installed. */
+internal fun isTrustedAddonUrl(url: String): Boolean {
+    val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+    return uri.scheme.equals("https", ignoreCase = true) &&
+        uri.host.equals("addons.mozilla.org", ignoreCase = true) &&
+        uri.userInfo == null
 }

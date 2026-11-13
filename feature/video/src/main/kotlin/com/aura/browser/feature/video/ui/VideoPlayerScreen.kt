@@ -1,5 +1,16 @@
 package com.aura.browser.feature.video.ui
 
+import kotlinx.coroutines.delay
+import com.aura.browser.core.permissions.AuraPermissionManager
+import com.aura.browser.core.permissions.AuraPermissionGroup
+import com.aura.browser.core.designsystem.component.ImmersiveModeEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.DisposableEffect
+import androidx.activity.compose.BackHandler
+import android.content.pm.ActivityInfo
+import android.content.Intent
+import android.content.ContextWrapper
+import android.app.Activity
 import android.content.ContentUris
 import android.content.Context
 import android.provider.MediaStore
@@ -77,7 +88,19 @@ class VideoPlayerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     val mediaControllerManager: AuraMediaControllerManager,
     private val positionDao: VideoPlaybackPositionDao,
+    private val permissionManager: AuraPermissionManager,
 ) : ViewModel() {
+
+    private val _hasVideoAccess = MutableStateFlow(permissionManager.isPermissionGroupGranted(AuraPermissionGroup.VIDEO_MEDIA))
+    val hasVideoAccess: StateFlow<Boolean> = _hasVideoAccess.asStateFlow()
+
+    fun missingPermissions(): Array<String> =
+        permissionManager.permissionsToRequest(AuraPermissionGroup.VIDEO_MEDIA)
+
+    fun onPermissionsResult() {
+        _hasVideoAccess.value = permissionManager.isPermissionGroupGranted(AuraPermissionGroup.VIDEO_MEDIA)
+        scanDeviceVideos()
+    }
 
     private val _videos = MutableStateFlow<List<LocalVideoItem>>(emptyList())
     val videos: StateFlow<List<LocalVideoItem>> = _videos.asStateFlow()
@@ -93,6 +116,7 @@ class VideoPlayerViewModel @Inject constructor(
     }
 
     fun scanDeviceVideos() {
+        if (!permissionManager.isPermissionGroupGranted(AuraPermissionGroup.VIDEO_MEDIA)) return
         viewModelScope.launch {
             val loaded = withContext(Dispatchers.IO) {
                 val list = mutableListOf<LocalVideoItem>()
@@ -157,7 +181,7 @@ class VideoPlayerViewModel @Inject constructor(
             val item = LocalVideoItem(
                 id = uri.toString(),
                 uri = uri.toString(),
-                title = uri.lastPathSegment ?: "Selected Video",
+                title = uri.lastPathSegment?.substringAfterLast('/') ?: "Selected Video",
                 durationMs = saved?.durationMs ?: 0L,
                 lastPositionMs = saved?.positionMs ?: 0L,
                 subtitleUri = saved?.subtitleUri,
@@ -208,24 +232,64 @@ fun VideoPlayerScreen(
     val videos by viewModel.videos.collectAsStateWithLifecycle()
     val selectedVideo by viewModel.selectedVideo.collectAsStateWithLifecycle()
     val playbackState by viewModel.mediaControllerManager.playbackState.collectAsStateWithLifecycle()
+    val controller by viewModel.mediaControllerManager.controller.collectAsStateWithLifecycle()
+    val hasVideoAccess by viewModel.hasVideoAccess.collectAsStateWithLifecycle()
     var isFullscreenLandscape by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { viewModel.onPermissionsResult() }
 
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) viewModel.openSafVideoUri(uri)
+        if (uri != null) {
+            // Keep access across process death so "resume" keeps working for picked files.
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            viewModel.openSafVideoUri(uri)
+        }
     }
 
     val subtitlePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) viewModel.attachSubtitleUri(uri)
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            viewModel.attachSubtitleUri(uri)
+        }
     }
 
-    LaunchedEffect(playbackState.positionMs) {
-        if (playbackState.positionMs > 0L) {
-            viewModel.saveResumeCheckpoint()
+    LaunchedEffect(Unit) {
+        val missing = viewModel.missingPermissions()
+        if (missing.isNotEmpty()) permissionLauncher.launch(missing) else viewModel.scanDeviceVideos()
+    }
+
+    // Resume checkpoint: every few seconds while playing, and when leaving the screen.
+    LaunchedEffect(selectedVideo?.id) {
+        while (true) {
+            delay(5_000L)
+            if (viewModel.mediaControllerManager.playbackState.value.isPlaying) viewModel.saveResumeCheckpoint()
         }
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.saveResumeCheckpoint() }
+    }
+
+    BackHandler(enabled = isFullscreenLandscape) { isFullscreenLandscape = false }
+    ImmersiveModeEffect(active = isFullscreenLandscape)
+    DisposableEffect(isFullscreenLandscape) {
+        val activity = context.findActivity()
+        activity?.requestedOrientation = if (isFullscreenLandscape) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
 
     Column(
@@ -235,8 +299,8 @@ fun VideoPlayerScreen(
     ) {
         if (!isFullscreenLandscape) {
             GlassTopBar(
-                title = "Aura Video Cinema",
-                subtitle = "MP4 • MKV • WebM • Subtitles • Gesture Seek • PiP",
+                title = "Video",
+                subtitle = "${videos.size} video(s) • double-tap to seek",
                 actions = {
                     IconButton(onClick = onEnterPip) {
                         Icon(
@@ -251,10 +315,13 @@ fun VideoPlayerScreen(
 
         // Media3 PlayerView Container with Double-Tap Seek Gestures
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (isFullscreenLandscape) 420.dp else 240.dp)
-                .padding(horizontal = if (isFullscreenLandscape) 0.dp else 16.dp, vertical = 8.dp)
+            modifier = (
+                if (isFullscreenLandscape) Modifier.fillMaxSize()
+                else Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
                 .clip(RoundedCornerShape(if (isFullscreenLandscape) 0.dp else 22.dp))
                 .background(AuraColors.ElevatedBackground)
                 .pointerInput(Unit) {
@@ -278,23 +345,40 @@ fun VideoPlayerScreen(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                         )
                         useController = true
-                        player = viewModel.mediaControllerManager.mediaController
                     }
                 },
                 update = { playerView ->
-                    if (playerView.player !== viewModel.mediaControllerManager.mediaController) {
-                        playerView.player = viewModel.mediaControllerManager.mediaController
-                    }
+                    if (playerView.player !== controller) playerView.player = controller
                 },
+                onRelease = { playerView -> playerView.player = null },
                 modifier = Modifier.fillMaxSize(),
             )
         }
 
-        LazyColumn(
+        if (!isFullscreenLandscape) LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            if (!hasVideoAccess) {
+                item {
+                    GlassCard(borderColor = AuraColors.WarningAmber) {
+                        Text(text = "Allow access to your videos", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Aura needs permission to list videos on this device. You can still open a single file below.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        GlassPillButton(
+                            text = "Allow access",
+                            isPrimary = true,
+                            onClick = { permissionLauncher.launch(viewModel.missingPermissions()) },
+                        )
+                    }
+                }
+            }
+
             // Controls Bar: Seek -10s/+10s, Subtitles, Fullscreen, PiP
             item {
                 GlassCard {
@@ -312,7 +396,7 @@ fun VideoPlayerScreen(
                         GlassPillButton(
                             text = "Subtitles",
                             icon = Icons.Default.Subtitles,
-                            onClick = { subtitlePickerLauncher.launch(arrayOf("text/vtt", "application/x-subrip", "*/*")) },
+                            onClick = { subtitlePickerLauncher.launch(arrayOf("*/*")) },
                         )
                         IconButton(onClick = { isFullscreenLandscape = !isFullscreenLandscape }) {
                             Icon(
@@ -360,7 +444,7 @@ fun VideoPlayerScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     GlassPillButton(
-                        text = "Open Video File (MP4/MKV/WebM)",
+                        text = "Open video file",
                         icon = Icons.Default.VideoFile,
                         isPrimary = true,
                         onClick = {
@@ -374,7 +458,7 @@ fun VideoPlayerScreen(
 
             item {
                 Text(
-                    text = "Local Video Library (${videos.size})",
+                    text = "On this device (${videos.size})",
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
@@ -411,4 +495,10 @@ fun VideoPlayerScreen(
             }
         }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

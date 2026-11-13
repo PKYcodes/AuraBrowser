@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Aura Media & Background Enhancer",
-  "version": "1.0.0",
-  "description": "Keeps HTML5 video/audio active in background tabs and provides clean mobile theater styling.",
+  "version": "1.1.0",
+  "description": "Keeps YouTube playing when Aura is in the background and can hide the Shorts shelf.",
   "browser_specific_settings": {
     "gecko": {
       "id": "aura-media-enhancer@aura.browser",
@@ -13,16 +13,18 @@
     {
       "matches": [
         "*://*.youtube.com/*",
-        "*://*.youtu.be/*",
-        "<all_urls>"
+        "*://youtu.be/*",
+        "*://*.youtube-nocookie.com/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "css": ["shorts.css"],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "permissions": [
-    "activeTab",
-    "storage",
+    "nativeMessaging",
+    "nativeMessagingFromContent",
     "geckoViewAddons"
   ]
 }

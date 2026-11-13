@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Keeps the process alive while a web page plays audio/video in the background. -->
+        <service
+            android:name="com.aura.browser.feature.browser.service.AuraWebMediaService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+    </application>
+
+</manifest>

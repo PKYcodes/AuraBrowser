@@ -1,0 +1,10 @@
+/* Hidden only while the content script sets data-aura-hide-shorts="1" (best effort: YouTube markup changes). */
+html[data-aura-hide-shorts="1"] ytm-reel-shelf-renderer,
+html[data-aura-hide-shorts="1"] ytm-shorts-lockup-view-model,
+html[data-aura-hide-shorts="1"] ytm-shorts-lockup-view-model-v2,
+html[data-aura-hide-shorts="1"] ytd-reel-shelf-renderer,
+html[data-aura-hide-shorts="1"] ytd-rich-shelf-renderer[is-shorts],
+html[data-aura-hide-shorts="1"] ytm-rich-section-renderer:has(ytm-shorts-lockup-view-model),
+html[data-aura-hide-shorts="1"] ytm-pivot-bar-item-renderer:has(a[href^="/shorts"]) {
+  display: none !important;
+}

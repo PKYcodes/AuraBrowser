@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -64,7 +66,6 @@ class PrivacyDashboardViewModel @Inject constructor(
     fun selectTrackingPreset(preset: TrackingProtectionPreset) {
         viewModelScope.launch {
             preferencesDataSource.setTrackingProtectionPreset(preset)
-            engineManager.applyPrivacySettings(preset, settings.value.httpsOnlyMode)
         }
     }
 
@@ -77,8 +78,11 @@ class PrivacyDashboardViewModel @Inject constructor(
     fun setHttpsOnly(enabled: Boolean) {
         viewModelScope.launch {
             preferencesDataSource.setHttpsOnlyMode(enabled)
-            engineManager.applyPrivacySettings(settings.value.trackingProtectionPreset, enabled)
         }
+    }
+
+    fun revokeSitePermissions(origin: String) {
+        viewModelScope.launch { sitePermissionDao.deleteSitePermission(origin) }
     }
 
     fun clearAllCookiesAndSiteData() {
@@ -102,8 +106,8 @@ fun PrivacyDashboardScreen(
             .background(AuraColors.DeepBackground),
     ) {
         GlassTopBar(
-            title = "Privacy & Security Shield",
-            subtitle = "Zero Analytics • HTTPS-First • GeckoView ContentBlocking",
+            title = "Privacy shield",
+            subtitle = "No analytics • HTTPS-first • Tracking protection",
         )
 
         LazyColumn(
@@ -210,6 +214,38 @@ fun PrivacyDashboardScreen(
                 }
             }
 
+            if (sitePermissions.isNotEmpty()) {
+                item {
+                    GlassCard {
+                        Text(text = "Saved site permissions", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        sitePermissions.forEach { entry ->
+                            val granted = buildList {
+                                if (entry.locationAllowed) add("location")
+                                if (entry.notificationsAllowed) add("notifications")
+                                if (entry.cameraAllowed) add("camera")
+                                if (entry.microphoneAllowed) add("microphone")
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = entry.origin.substringAfter("://"), style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = if (granted.isEmpty()) "No special permissions" else granted.joinToString(", "),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.revokeSitePermissions(entry.origin) }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Revoke permissions for ${entry.origin}", tint = AuraColors.TextSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 GlassCard {
                     Row(
@@ -223,14 +259,14 @@ fun PrivacyDashboardScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Purge Cookies, Cache & Site Permissions", style = MaterialTheme.typography.titleMedium)
+                            Text(text = "Clear cookies, cache & site permissions", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = "Clears GeckoRuntime StorageController caches, cookies, and ${sitePermissions.size} stored origin rules.",
+                                text = "Removes cookies, cached data and ${sitePermissions.size} saved site rule(s).",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
                         GlassPillButton(
-                            text = "Purge Now",
+                            text = "Clear",
                             icon = Icons.Default.DeleteForever,
                             isPrimary = true,
                             accentColor = AuraColors.DangerRed,

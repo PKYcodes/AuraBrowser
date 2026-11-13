@@ -1,10 +1,6 @@
 package com.aura.browser.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -23,30 +19,33 @@ import com.aura.browser.feature.tabs.ui.TabsScreen
 import com.aura.browser.feature.video.ui.VideoPlayerScreen
 import com.aura.browser.feature.youtube.ui.YouTubeIntegrationScreen
 
+/**
+ * App navigation graph.
+ *
+ * [onOpenUrl] is invoked by every screen that wants to browse somewhere (home shortcuts, bookmarks,
+ * history, YouTube). The host loads the URL straight into the engine and this graph then reveals the
+ * browser, so there is no pending-URL state that could be replayed when the browser tab is revisited.
+ */
 @Composable
 fun AuraNavHost(
     navController: NavHostController,
-    initialSharedUrl: String?,
+    onOpenUrl: (String) -> Unit,
     onRequestPip: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var pendingBrowserUrl by rememberSaveable { mutableStateOf(initialSharedUrl) }
+    val openInBrowser: (String) -> Unit = { url ->
+        onOpenUrl(url)
+        navController.openBrowser()
+    }
 
     NavHost(
         navController = navController,
-        startDestination = if (!initialSharedUrl.isNullOrBlank()) {
-            AuraDestination.BROWSER.route
-        } else {
-            AuraDestination.HOME.route
-        },
+        startDestination = AuraDestination.HOME.route,
         modifier = modifier,
     ) {
         composable(AuraDestination.HOME.route) {
             HomeScreen(
-                onLaunchUrl = { targetUrl ->
-                    pendingBrowserUrl = targetUrl
-                    navController.navigate(AuraDestination.BROWSER.route)
-                },
+                onLaunchUrl = openInBrowser,
                 onNavigateYoutube = { navController.navigate(AuraDestination.YOUTUBE.route) },
                 onNavigateMusic = { navController.navigate(AuraDestination.MUSIC.route) },
                 onNavigateVideo = { navController.navigate(AuraDestination.VIDEO.route) },
@@ -62,7 +61,6 @@ fun AuraNavHost(
 
         composable(AuraDestination.BROWSER.route) {
             BrowserScreen(
-                initialUrl = pendingBrowserUrl,
                 onOpenTabs = { navController.navigate(AuraDestination.TABS.route) },
                 onOpenExtensions = { navController.navigate(AuraDestination.EXTENSIONS.route) },
                 onOpenDownloads = { navController.navigate(AuraDestination.DOWNLOADS.route) },
@@ -73,16 +71,13 @@ fun AuraNavHost(
 
         composable(AuraDestination.TABS.route) {
             TabsScreen(
-                onTabSelected = { navController.navigate(AuraDestination.BROWSER.route) },
+                onTabSelected = { navController.openBrowser() },
             )
         }
 
         composable(AuraDestination.YOUTUBE.route) {
             YouTubeIntegrationScreen(
-                onOpenInBrowser = { ytUrl ->
-                    pendingBrowserUrl = ytUrl
-                    navController.navigate(AuraDestination.BROWSER.route)
-                },
+                onOpenInBrowser = openInBrowser,
                 onRequestPip = onRequestPip,
             )
         }
@@ -101,19 +96,13 @@ fun AuraNavHost(
 
         composable(AuraDestination.BOOKMARKS.route) {
             BookmarksScreen(
-                onOpenUrl = { url ->
-                    pendingBrowserUrl = url
-                    navController.navigate(AuraDestination.BROWSER.route)
-                }
+                onOpenUrl = openInBrowser
             )
         }
 
         composable(AuraDestination.HISTORY.route) {
             HistoryScreen(
-                onOpenUrl = { url ->
-                    pendingBrowserUrl = url
-                    navController.navigate(AuraDestination.BROWSER.route)
-                }
+                onOpenUrl = openInBrowser
             )
         }
 
@@ -132,5 +121,12 @@ fun AuraNavHost(
         composable(AuraDestination.SETTINGS.route) {
             SettingsScreen()
         }
+    }
+}
+
+/** Shows the browser without stacking duplicate copies of it on the back stack. */
+fun NavHostController.openBrowser() {
+    if (!popBackStack(AuraDestination.BROWSER.route, inclusive = false)) {
+        navigate(AuraDestination.BROWSER.route) { launchSingleTop = true }
     }
 }
