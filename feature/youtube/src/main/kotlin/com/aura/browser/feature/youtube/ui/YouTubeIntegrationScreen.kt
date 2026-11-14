@@ -45,7 +45,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class YouTubeViewModel @Inject constructor(
+class YouTubeSettingsViewModel @Inject constructor(
     private val preferencesDataSource: AuraPreferencesDataSource,
 ) : ViewModel() {
 
@@ -66,7 +66,7 @@ class YouTubeViewModel @Inject constructor(
 fun YouTubeIntegrationScreen(
     onOpenInBrowser: (String) -> Unit,
     onRequestPip: () -> Unit,
-    viewModel: YouTubeViewModel = hiltViewModel(),
+    viewModel: YouTubeSettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
