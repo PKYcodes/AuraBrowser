@@ -33,7 +33,7 @@ gradle wrapper --gradle-version 8.10.2
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Debug builds include `arm64-v8a` and `x86_64`; release builds ship `arm64-v8a` only to keep the APK small.
+Debug and release builds ship `arm64-v8a` only (GeckoView is ~70 MB per ABI). For a PC emulator add `-PwithX86=true` to the debug build.
 
 ### Release signing
 

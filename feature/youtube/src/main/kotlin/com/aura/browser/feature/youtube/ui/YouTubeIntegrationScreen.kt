@@ -76,8 +76,8 @@ fun YouTubeIntegrationScreen(
             .background(AuraColors.DeepBackground),
     ) {
         GlassTopBar(
-            title = "YouTube Web & Media Hub",
-            subtitle = "GeckoView YouTube Integration • Share Intent & PiP Ready",
+            title = "YouTube settings",
+            subtitle = "Open links • Background play • Picture-in-Picture",
         )
 
         LazyColumn(
@@ -88,12 +88,12 @@ fun YouTubeIntegrationScreen(
             item {
                 GlassCard(isHighlighted = true) {
                     Text(
-                        text = "Launch YouTube in GeckoView",
+                        text = "Open in YouTube",
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Supports full YouTube web playback, comments, likes, playlists, subscriptions, and standard OAuth2 Google Account sign-in inside GeckoView.",
+                        text = "Pick a shortcut or paste a YouTube link. Links shared from other apps open here automatically.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(14.dp))
@@ -147,25 +147,25 @@ fun YouTubeIntegrationScreen(
             item {
                 GlassCard {
                     Text(
-                        text = "Browser-Level Media Enhancements",
+                        text = "Playback",
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Uses GeckoView's suspendMediaWhenInactive(false) setting and Aura's built-in WebExtension (aura-media-enhancer@aura.browser) for legitimate browser-level playback enhancements without bypassing server-side DRM or account authentication.",
+                        text = "In fullscreen: swipe up/down on the left for brightness, on the right for volume, and pinch to zoom.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
                     SettingToggleRow(
-                        title = "Keep Web Audio Active in Background",
-                        subtitle = "Prevents GeckoSession from suspending HTML5 <video>/<audio> elements when switching tabs or minimizing.",
+                        title = "Keep playing in the background",
+                        subtitle = "Audio continues when you switch apps or turn the screen off.",
                         checked = settings.youtubeBackgroundPlayEnabled,
                         onCheckedChange = viewModel::setBackgroundPlay,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     SettingToggleRow(
-                        title = "Hide Distracting Shorts Shelf",
+                        title = "Hide Shorts",
                         subtitle = "Best-effort: hides Shorts shelves on youtube.com. Applies to pages you open next.",
                         checked = settings.youtubeHideShortsShelf,
                         onCheckedChange = viewModel::setHideShorts,
@@ -187,16 +187,16 @@ fun YouTubeIntegrationScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Native Android Picture-in-Picture",
+                                text = "Picture-in-Picture",
                                 style = MaterialTheme.typography.titleMedium,
                             )
                             Text(
-                                text = "Pin active full-screen web video or local video to a floating corner window.",
+                                text = "Keep the video in a small floating window while you use other apps.",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
                         GlassPillButton(
-                            text = "Enter PiP",
+                            text = "Start",
                             onClick = onRequestPip,
                         )
                     }

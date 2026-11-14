@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed (round 3)
+- Screen no longer dims/locks while a video plays (local or full-screen web video).
+- YouTube's "Video paused. Continue watching?" prompt is dismissed automatically (with background play on).
+- Web media notification now has real previous / play-pause / next / stop buttons with icons, a lock-screen
+  session and headset support (it used text-only actions before).
+
+### Added (round 2)
+- Extension install no longer hangs: GeckoView's install prompt is answered with a permission dialog.
+- Paste any addons.mozilla.org page link (any language, Firefox or Android) and Aura installs the add-on.
+- YouTube tab is now a full-screen, app-like YouTube session; shared YouTube links open there.
+- Fullscreen video gestures: pinch to zoom, swipe left side for brightness, right side for volume.
+- Picture-in-Picture for YouTube shows only the video (not a cropped copy of the page) and uses the real aspect ratio.
+
 ### Fixed
 - URLs were corrupted (`%` re-encoded) when tracking parameters were stripped; this broke OAuth redirects.
 - Downloads were fake database rows; they now stream to storage with progress, cancel and checksum.

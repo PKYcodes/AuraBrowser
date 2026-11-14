@@ -8,8 +8,13 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.media.app.NotificationCompat.MediaStyle
+import com.aura.browser.feature.browser.R
 import com.aura.browser.feature.browser.engine.AuraGeckoEngineManager
 import com.aura.browser.feature.browser.engine.WebMediaInfo
 import dagger.hilt.android.AndroidEntryPoint
@@ -21,9 +26,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Foreground service shown while a web page is playing media. It exists so Android keeps the browser
- * process at foreground priority (audio continues with the screen off) and to offer play/pause/stop
- * controls in the notification shade.
+ * Foreground service shown while a web page plays media.
+ *
+ * It keeps the browser process at foreground priority (audio continues with the screen off) and publishes a
+ * real media notification: a [MediaSessionCompat] plus `MediaStyle`, so the system shows the proper
+ * previous / play-pause / next / stop buttons with icons, on the lock screen and with headset buttons too.
+ * (A plain notification only shows text labels for its actions on current Android versions.)
  */
 @AndroidEntryPoint
 class AuraWebMediaService : Service() {
@@ -32,18 +40,31 @@ class AuraWebMediaService : Service() {
     lateinit var engine: AuraGeckoEngineManager
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var mediaSession: MediaSessionCompat
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
+
+        mediaSession = MediaSessionCompat(this, "AuraWebMedia").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() = engine.playWebMedia()
+                override fun onPause() = engine.pauseWebMedia()
+                override fun onStop() = engine.stopWebMedia()
+                override fun onSkipToNext() = engine.webNextTrack()
+                override fun onSkipToPrevious() = engine.webPreviousTrack()
+            })
+            isActive = true
+        }
+
         // startForegroundService() requires a notification within a few seconds.
-        promoteToForeground(engine.webMedia.value)
+        render(engine.webMedia.value)
         scope.launch {
             engine.webMedia.collect { info ->
                 if (info.isActive) {
-                    promoteToForeground(info)
+                    render(info)
                 } else {
                     ServiceCompat.stopForeground(this@AuraWebMediaService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     stopSelf()
@@ -55,6 +76,8 @@ class AuraWebMediaService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_TOGGLE -> engine.toggleWebMedia()
+            ACTION_NEXT -> engine.webNextTrack()
+            ACTION_PREVIOUS -> engine.webPreviousTrack()
             ACTION_STOP -> engine.stopWebMedia()
         }
         return START_NOT_STICKY
@@ -62,10 +85,13 @@ class AuraWebMediaService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        mediaSession.isActive = false
+        mediaSession.release()
         super.onDestroy()
     }
 
-    private fun promoteToForeground(info: WebMediaInfo) {
+    private fun render(info: WebMediaInfo) {
+        updateSession(info)
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
@@ -74,15 +100,38 @@ class AuraWebMediaService : Service() {
         )
     }
 
+    private fun updateSession(info: WebMediaInfo) {
+        mediaSession.setMetadata(
+            MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, info.title.ifBlank { "Web media" })
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, info.artist.ifBlank { "Aura Browser" })
+                .build()
+        )
+        val actions = PlaybackStateCompat.ACTION_PLAY or
+            PlaybackStateCompat.ACTION_PAUSE or
+            PlaybackStateCompat.ACTION_PLAY_PAUSE or
+            PlaybackStateCompat.ACTION_STOP or
+            PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+            PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+        mediaSession.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(actions)
+                .setState(
+                    if (info.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
+                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    1f,
+                )
+                .build()
+        )
+    }
+
     private fun buildNotification(info: WebMediaInfo): Notification {
         val openApp = packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
             PendingIntent.getActivity(this, 0, launch, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
-        val toggle = servicePendingIntent(ACTION_TOGGLE, 1)
-        val stop = servicePendingIntent(ACTION_STOP, 2)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(if (info.isPlaying) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
+            .setSmallIcon(R.drawable.ic_stat_web_media)
             .setContentTitle(info.title.ifBlank { "Web media" })
             .setContentText(info.artist.ifBlank { "Aura Browser" })
             .setContentIntent(openApp)
@@ -91,12 +140,19 @@ class AuraWebMediaService : Service() {
             .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(R.drawable.ic_media_previous, "Previous", servicePendingIntent(ACTION_PREVIOUS, 1))
             .addAction(
-                if (info.isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                if (info.isPlaying) R.drawable.ic_media_pause else R.drawable.ic_media_play,
                 if (info.isPlaying) "Pause" else "Play",
-                toggle,
+                servicePendingIntent(ACTION_TOGGLE, 2),
             )
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stop)
+            .addAction(R.drawable.ic_media_next, "Next", servicePendingIntent(ACTION_NEXT, 3))
+            .addAction(R.drawable.ic_media_stop, "Stop", servicePendingIntent(ACTION_STOP, 4))
+            .setStyle(
+                MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
             .build()
     }
 
@@ -122,6 +178,8 @@ class AuraWebMediaService : Service() {
         const val CHANNEL_ID = "aura_web_media"
         const val NOTIFICATION_ID = 4101
         const val ACTION_TOGGLE = "com.aura.browser.action.WEB_MEDIA_TOGGLE"
+        const val ACTION_NEXT = "com.aura.browser.action.WEB_MEDIA_NEXT"
+        const val ACTION_PREVIOUS = "com.aura.browser.action.WEB_MEDIA_PREVIOUS"
         const val ACTION_STOP = "com.aura.browser.action.WEB_MEDIA_STOP"
     }
 }

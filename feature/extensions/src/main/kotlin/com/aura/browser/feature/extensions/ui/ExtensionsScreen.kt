@@ -46,6 +46,8 @@ import com.aura.browser.core.designsystem.component.GlassCard
 import com.aura.browser.core.designsystem.component.GlassPillButton
 import com.aura.browser.core.designsystem.component.GlassTopBar
 import com.aura.browser.core.designsystem.theme.AuraColors
+import com.aura.browser.feature.browser.engine.AuraGeckoEngineManager
+import com.aura.browser.feature.browser.ui.BrowserDialogHost
 import com.aura.browser.feature.extensions.manager.AuraWebExtensionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -53,6 +55,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ExtensionsViewModel @Inject constructor(
     val extensionManager: AuraWebExtensionManager,
+    val engineManager: AuraGeckoEngineManager,
 ) : ViewModel()
 
 @Composable
@@ -220,7 +223,7 @@ fun ExtensionsScreen(
                     ) {
                         if (customXpiUrl.isEmpty()) {
                             Text(
-                                text = "https://addons.mozilla.org/firefox/downloads/...",
+                                text = "Paste add-on link from addons.mozilla.org",
                                 style = MaterialTheme.typography.bodyMedium.copy(color = AuraColors.TextMuted),
                             )
                         }
@@ -235,7 +238,7 @@ fun ExtensionsScreen(
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                     GlassPillButton(
-                        text = "Verify & Install XPI",
+                        text = "Install add-on",
                         icon = Icons.Default.AddLink,
                         isPrimary = true,
                         onClick = { viewModel.extensionManager.installFromUrl(customXpiUrl) },
@@ -244,4 +247,7 @@ fun ExtensionsScreen(
             }
         }
     }
+
+    // Shows the permission dialog GeckoView raises when an add-on is installed.
+    BrowserDialogHost(engine = viewModel.engineManager)
 }

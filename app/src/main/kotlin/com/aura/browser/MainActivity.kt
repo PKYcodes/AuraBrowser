@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,7 +31,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,9 +62,11 @@ import com.aura.browser.feature.pip.AuraPipController
 import com.aura.browser.feature.youtube.intent.YouTubeIntentResolver
 import com.aura.browser.navigation.AuraDestination
 import com.aura.browser.navigation.AuraNavHost
+import com.aura.browser.navigation.navigateTopLevel
 import com.aura.browser.navigation.openBrowser
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -84,7 +89,9 @@ class MainActivity : ComponentActivity() {
     lateinit var preferencesDataSource: AuraPreferencesDataSource
 
     /** A link received from outside the app (share sheet, VIEW intent) waiting to be opened. */
-    private var incomingUrl by mutableStateOf<String?>(null)
+    private data class IncomingLink(val url: String, val isYouTube: Boolean)
+
+    private var incomingLink by mutableStateOf<IncomingLink?>(null)
 
     /** "Auto-enter Picture-in-Picture" preference, mirrored from DataStore. */
     private var autoPipEnabled by mutableStateOf(true)
@@ -95,7 +102,7 @@ class MainActivity : ComponentActivity() {
         pipController.registerActionReceiver()
         pipController.playPauseHandler = ::togglePlaybackFromPip
 
-        if (savedInstanceState == null) incomingUrl = extractIncomingUrl(intent)
+        if (savedInstanceState == null) incomingLink = extractIncomingLink(intent)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -112,6 +119,9 @@ class MainActivity : ComponentActivity() {
                 val inPipMode by pipController.isInPipMode.collectAsStateWithLifecycle()
                 val playback by mediaControllerManager.playbackState.collectAsStateWithLifecycle()
                 val browserState by geckoEngineManager.sessionState.collectAsStateWithLifecycle()
+                val youTubeState by geckoEngineManager.youTubeState.collectAsStateWithLifecycle()
+                val webMedia by geckoEngineManager.webMedia.collectAsStateWithLifecycle()
+                val webVideoSize by geckoEngineManager.webVideoSize.collectAsStateWithLifecycle()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route ?: AuraDestination.HOME.route
 
@@ -124,13 +134,21 @@ class MainActivity : ComponentActivity() {
                 )
 
                 // Open links that arrive from other apps, on cold start and while running.
-                LaunchedEffect(incomingUrl) {
-                    incomingUrl?.let { url ->
-                        geckoEngineManager.loadInputOrUrl(url)
-                        navController.openBrowser()
-                        incomingUrl = null
+                LaunchedEffect(incomingLink) {
+                    incomingLink?.let { link ->
+                        if (link.isYouTube) {
+                            // YouTube links open in the full-screen YouTube section, like the real app.
+                            geckoEngineManager.openYouTube(link.url)
+                            navController.navigateTopLevel(AuraDestination.YOUTUBE.route)
+                        } else {
+                            geckoEngineManager.loadInputOrUrl(link.url)
+                            navController.openBrowser()
+                        }
+                        incomingLink = null
                     }
                 }
+
+                SideEffect { immersive.inPip = inPipMode }
 
                 // Hide system bars for fullscreen video.
                 LaunchedEffect(immersive.enabled) {
@@ -145,12 +163,13 @@ class MainActivity : ComponentActivity() {
 
                 // Keep PiP parameters current so Android 12+ can enter PiP automatically on Home.
                 val localVideoPlaying = playback.isPlaying && playback.isVideo
-                val webVideoPlaying = browserState.isFullScreenMedia && browserState.isWebMediaPlaying
+                val webFullScreen = browserState.isFullScreenMedia || youTubeState.isFullScreen
+                val webVideoPlaying = webFullScreen && webMedia.isPlaying
                 LaunchedEffect(
-                    localVideoPlaying, webVideoPlaying, playback.videoWidth, playback.videoHeight, autoPipEnabled,
+                    localVideoPlaying, webVideoPlaying, playback.videoWidth, playback.videoHeight, webVideoSize, autoPipEnabled,
                 ) {
-                    val width = if (localVideoPlaying) playback.videoWidth else 16
-                    val height = if (localVideoPlaying) playback.videoHeight else 9
+                    val width = if (localVideoPlaying) playback.videoWidth else webVideoSize?.first ?: 16
+                    val height = if (localVideoPlaying) playback.videoHeight else webVideoSize?.second ?: 9
                     pipController.updateParams(
                         activity = this@MainActivity,
                         width = width,
@@ -158,6 +177,13 @@ class MainActivity : ComponentActivity() {
                         isPlaying = localVideoPlaying || webVideoPlaying,
                         autoEnter = autoPipEnabled && (localVideoPlaying || webVideoPlaying),
                     )
+                }
+
+                // Keep the screen awake while a video plays full screen (otherwise it dims and locks mid-video).
+                val keepScreenOn = localVideoPlaying || webVideoPlaying
+                DisposableEffect(keepScreenOn) {
+                    if (keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
                 }
 
                 CompositionLocalProvider(LocalImmersiveMode provides immersive) {
@@ -227,21 +253,27 @@ class MainActivity : ComponentActivity() {
 
     private fun requestPipFromUi() {
         val playback = mediaControllerManager.playbackState.value
-        val web = geckoEngineManager.sessionState.value
-        val playing = playback.isPlaying || web.isWebMediaPlaying
+        val web = geckoEngineManager.webMedia.value
+        val playing = playback.isPlaying || web.isPlaying
         if (!playing) {
             Toast.makeText(this, "Start a video first, then enter Picture-in-Picture", Toast.LENGTH_SHORT).show()
             return
         }
         val useLocal = playback.isPlaying && playback.isVideo
-        val entered = pipController.enterPipNow(
-            activity = this,
-            width = if (useLocal) playback.videoWidth else 16,
-            height = if (useLocal) playback.videoHeight else 9,
-            isPlaying = true,
-        )
-        if (!entered) {
-            Toast.makeText(this, "Picture-in-Picture isn\u2019t available on this device", Toast.LENGTH_SHORT).show()
+        val webSize = geckoEngineManager.webVideoSize.value
+        val width = if (useLocal) playback.videoWidth else webSize?.first ?: 16
+        val height = if (useLocal) playback.videoHeight else webSize?.second ?: 9
+
+        lifecycleScope.launch {
+            if (!useLocal) {
+                // Make the page show only its video, otherwise the PiP window would be a cropped copy of the page.
+                if (geckoEngineManager.setWebPipLayout(true)) delay(250)
+            }
+            val entered = pipController.enterPipNow(activity = this@MainActivity, width = width, height = height, isPlaying = true)
+            if (!entered) {
+                if (!useLocal) geckoEngineManager.setWebPipLayout(false)
+                Toast.makeText(this@MainActivity, "Picture-in-Picture isn\u2019t available on this device", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -254,7 +286,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        extractIncomingUrl(intent)?.takeIf { it.isNotBlank() }?.let { incomingUrl = it }
+        extractIncomingLink(intent)?.let { incomingLink = it }
     }
 
     override fun onUserLeaveHint() {
@@ -264,12 +296,14 @@ class MainActivity : ComponentActivity() {
         val playback = mediaControllerManager.playbackState.value
         val web = geckoEngineManager.sessionState.value
         val localVideo = playback.isPlaying && playback.isVideo
-        val webVideo = web.isFullScreenMedia && web.isWebMediaPlaying
+        val webFullScreen = web.isFullScreenMedia || geckoEngineManager.youTubeState.value.isFullScreen
+        val webVideo = webFullScreen && geckoEngineManager.webMedia.value.isPlaying
         if (localVideo || webVideo) {
+            val webSize = geckoEngineManager.webVideoSize.value
             pipController.enterPipNow(
                 activity = this,
-                width = if (localVideo) playback.videoWidth else 16,
-                height = if (localVideo) playback.videoHeight else 9,
+                width = if (localVideo) playback.videoWidth else webSize?.first ?: 16,
+                height = if (localVideo) playback.videoHeight else webSize?.second ?: 9,
                 isPlaying = true,
             )
         }
@@ -281,6 +315,8 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipController.onPictureInPictureModeChanged(isInPictureInPictureMode)
+        // Back to the normal page layout once the PiP window is closed or expanded.
+        if (!isInPictureInPictureMode) geckoEngineManager.setWebPipLayout(false)
     }
 
     override fun onStop() {
@@ -295,18 +331,15 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun extractIncomingUrl(intent: Intent?): String? {
+    private fun extractIncomingLink(intent: Intent?): IncomingLink? {
         if (intent == null) return null
-        return when (intent.action) {
-            Intent.ACTION_VIEW -> {
-                val rawUri = intent.dataString ?: return null
-                youTubeIntentResolver.extractAndNormalize(rawUri)?.canonicalHttpsUrl ?: rawUri
-            }
-            Intent.ACTION_SEND -> {
-                val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
-                youTubeIntentResolver.extractAndNormalize(sharedText)?.canonicalHttpsUrl ?: sharedText
-            }
+        val raw = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.dataString
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
             else -> null
-        }
+        }?.takeIf { it.isNotBlank() } ?: return null
+
+        val youTube = youTubeIntentResolver.extractAndNormalize(raw)
+        return if (youTube != null) IncomingLink(youTube.canonicalHttpsUrl, isYouTube = true) else IncomingLink(raw, isYouTube = false)
     }
 }

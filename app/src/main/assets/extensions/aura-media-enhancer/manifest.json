@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Aura Media & Background Enhancer",
-  "version": "1.1.0",
-  "description": "Keeps YouTube playing when Aura is in the background and can hide the Shorts shelf.",
+  "version": "1.2.0",
+  "description": "Keeps YouTube playing in the background, powers Picture-in-Picture and can hide the Shorts shelf.",
   "browser_specific_settings": {
     "gecko": {
       "id": "aura-media-enhancer@aura.browser",
@@ -17,7 +17,7 @@
         "*://*.youtube-nocookie.com/*"
       ],
       "js": ["content.js"],
-      "css": ["shorts.css"],
+      "css": ["aura.css"],
       "run_at": "document_start",
       "all_frames": true
     }

@@ -17,6 +17,7 @@ dependencies {
     implementation(projects.core.permissions)
     api(libs.mozilla.geckoview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.media)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

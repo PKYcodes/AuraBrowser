@@ -48,8 +48,13 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             ndk {
-                // x86_64 additionally lets debug builds run on desktop emulators.
-                abiFilters += listOf("arm64-v8a", "x86_64")
+                // arm64 only keeps the debug APK small (GeckoView is ~70 MB per ABI).
+                // Emulator on a PC? Build with: gradle :app:assembleDebug -PwithX86=true
+                abiFilters += if (providers.gradleProperty("withX86").isPresent) {
+                    listOf("arm64-v8a", "x86_64")
+                } else {
+                    listOf("arm64-v8a")
+                }
             }
         }
         release {
@@ -59,6 +64,7 @@ android {
             }
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
+            isShrinkResources = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

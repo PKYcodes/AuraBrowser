@@ -25,6 +25,16 @@ data class ActiveBrowserSessionState(
     val securityNotice: String? = null,
 )
 
+/** State of the dedicated YouTube section. */
+data class YouTubeAppState(
+    val url: String = "",
+    val title: String = "YouTube",
+    val progress: Int = 0,
+    val isLoading: Boolean = false,
+    val canGoBack: Boolean = false,
+    val isFullScreen: Boolean = false,
+)
+
 /** A tab as shown in the tab switcher. Private tabs only ever exist in memory. */
 data class BrowserTab(
     val id: String,

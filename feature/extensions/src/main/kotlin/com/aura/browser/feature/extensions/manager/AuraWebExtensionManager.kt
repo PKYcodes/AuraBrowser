@@ -111,25 +111,30 @@ class AuraWebExtensionManager @Inject constructor(
         }
     }
 
-    fun installFromUrl(xpiUri: String) {
-        val trimmed = xpiUri.trim()
-        if (!isTrustedAddonUrl(trimmed)) {
-            _statusMessage.value = "Security policy: only HTTPS links on addons.mozilla.org are permitted."
+    /**
+     * Installs an add-on from whatever the user pasted: a normal addons.mozilla.org page link
+     * (e.g. https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/), a direct .xpi link, or just the add-on name slug.
+     */
+    fun installFromUrl(input: String) {
+        val installUrl = resolveAddonInstallUrl(input)
+        if (installUrl == null) {
+            _statusMessage.value = "Paste an add-on link from addons.mozilla.org, " +
+                "for example https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/"
             return
         }
-        _statusMessage.value = "Installing WebExtension from $trimmed..."
+        _statusMessage.value = "Downloading add-on\u2026 confirm the permissions when asked."
         runCatching {
             val controller = engineManager.getOrCreateRuntime().webExtensionController
-            controller.install(trimmed, WebExtensionController.INSTALLATION_METHOD_MANAGER).accept(
+            controller.install(installUrl, WebExtensionController.INSTALLATION_METHOD_MANAGER).accept(
                 { installed ->
                     if (installed != null) {
                         runtimeExtensionsById[installed.id] = installed
                         upsertUiModel(installed.toUiModel())
-                        _statusMessage.value = "Installed ${installed.metaData.name ?: installed.id} successfully."
+                        _statusMessage.value = "Installed ${installed.metaData.name ?: installed.id}."
                     }
                 },
                 { error ->
-                    _statusMessage.value = "Installation failed: ${error?.localizedMessage ?: "Invalid or unsigned XPI"}"
+                    _statusMessage.value = "Installation failed: ${error?.localizedMessage ?: "the add-on couldn\u2019t be installed"}"
                 }
             )
         }.onFailure { e ->
@@ -238,4 +243,36 @@ internal fun isTrustedAddonUrl(url: String): Boolean {
     return uri.scheme.equals("https", ignoreCase = true) &&
         uri.host.equals("addons.mozilla.org", ignoreCase = true) &&
         uri.userInfo == null
+}
+
+private val ADDON_SLUG = Regex("^[A-Za-z0-9._@~-]{1,100}$")
+
+private fun latestXpiUrl(slug: String) = "https://addons.mozilla.org/firefox/downloads/latest/$slug/latest.xpi"
+
+/**
+ * Turns pasted text into an installable AMO download URL, or `null` when it isn't a Mozilla add-on.
+ * Accepts add-on page links (any locale, `/firefox/` or `/android/`), direct download links and bare slugs.
+ */
+internal fun resolveAddonInstallUrl(input: String): String? {
+    val text = input.trim()
+    if (text.isEmpty()) return null
+    if (!text.contains('/') && !text.contains('.') && ADDON_SLUG.matches(text)) return latestXpiUrl(text)
+
+    val withScheme = if (text.startsWith("http", ignoreCase = true)) text else "https://$text"
+    val uri = runCatching { java.net.URI(withScheme) }.getOrNull() ?: return null
+    if (!uri.scheme.equals("https", ignoreCase = true) ||
+        !uri.host.equals("addons.mozilla.org", ignoreCase = true) ||
+        uri.userInfo != null
+    ) return null
+
+    val segments = uri.rawPath.orEmpty().split('/').filter { it.isNotEmpty() }
+    val addonIndex = segments.indexOf("addon")
+    if (addonIndex >= 0 && addonIndex + 1 < segments.size) {
+        val slug = segments[addonIndex + 1]
+        if (ADDON_SLUG.matches(slug)) return latestXpiUrl(slug)
+    }
+    if (segments.contains("downloads") && (uri.rawPath.endsWith(".xpi"))) {
+        return "https://addons.mozilla.org${uri.rawPath}"
+    }
+    return null
 }

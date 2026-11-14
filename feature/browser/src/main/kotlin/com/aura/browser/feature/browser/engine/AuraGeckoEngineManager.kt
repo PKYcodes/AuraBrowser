@@ -125,6 +125,20 @@ class AuraGeckoEngineManager @Inject constructor(
     private val _webMedia = MutableStateFlow(WebMediaInfo())
     val webMedia: StateFlow<WebMediaInfo> = _webMedia.asStateFlow()
 
+    /** Intrinsic size of the video a page is playing (reported by the built-in extension). */
+    private val _webVideoSize = MutableStateFlow<Pair<Int, Int>?>(null)
+    val webVideoSize: StateFlow<Pair<Int, Int>?> = _webVideoSize.asStateFlow()
+
+    /** Live channels to the built-in extension's content script, one per page. */
+    private val extensionPorts = ConcurrentHashMap<GeckoSession, WebExtension.Port>()
+
+    // Dedicated full-screen YouTube section (separate from the tab list).
+    private var youTubeGeckoSession: GeckoSession? = null
+    private val _youTubeSession = MutableStateFlow<GeckoSession?>(null)
+    val youTubeSession: StateFlow<GeckoSession?> = _youTubeSession.asStateFlow()
+    private val _youTubeState = MutableStateFlow(YouTubeAppState())
+    val youTubeState: StateFlow<YouTubeAppState> = _youTubeState.asStateFlow()
+
     private val promptDelegate = AuraPromptDelegate(appContext, promptQueue)
     private val permissionDelegate = AuraPermissionDelegate(engineScope, promptQueue, sitePermissionDao, urlSanitizer)
 
@@ -169,6 +183,10 @@ class AuraGeckoEngineManager @Inject constructor(
 
         val createdRuntime = GeckoRuntime.create(appContext, runtimeSettings)
         geckoRuntime = createdRuntime
+        runCatching {
+            // Without a prompt delegate GeckoView never answers install requests (they hang forever).
+            createdRuntime.webExtensionController.setPromptDelegate(AuraExtensionPromptDelegate.create(promptQueue))
+        }.onFailure { Log.w(TAG, "Could not set extension prompt delegate", it) }
         ensureBuiltInMediaWebExtension(createdRuntime)
         return createdRuntime
     }
@@ -201,6 +219,25 @@ class AuraGeckoEngineManager @Inject constructor(
                 .put("backgroundPlay", settings.youtubeBackgroundPlayEnabled)
                 .put("hideShorts", settings.youtubeHideShortsShelf)
             return GeckoResult.fromValue<Any>(config)
+        }
+
+        override fun onConnect(port: WebExtension.Port) {
+            val owner = port.sender.session ?: return
+            extensionPorts[owner] = port
+            port.setDelegate(object : WebExtension.PortDelegate {
+                override fun onPortMessage(message: Any, port: WebExtension.Port) {
+                    val json = message as? JSONObject ?: return
+                    if (json.optString("type") == "videoSize") {
+                        val w = json.optInt("width")
+                        val h = json.optInt("height")
+                        if (w > 0 && h > 0) _webVideoSize.value = w to h
+                    }
+                }
+
+                override fun onDisconnect(port: WebExtension.Port) {
+                    extensionPorts.remove(owner, port)
+                }
+            })
         }
     }
 
@@ -454,6 +491,17 @@ class AuraGeckoEngineManager @Inject constructor(
 
     /** Re-creates a tab's session after the content process died. Background tabs are rebuilt lazily. */
     private fun recoverSession(tabId: String) {
+        if (tabId == YOUTUBE_SESSION_ID) {
+            val lastUrl = _youTubeState.value.url.ifBlank { YOUTUBE_HOME_URL }
+            engineScope.launch {
+                _youTubeSession.value = null
+                runCatching { youTubeGeckoSession?.close() }
+                youTubeGeckoSession = null
+                liveStates.remove(YOUTUBE_SESSION_ID)
+                openYouTube(lastUrl)
+            }
+            return
+        }
         engineScope.launch {
             val tab = tabs.value.firstOrNull { it.id == tabId } ?: return@launch
             val wasActive = tabId == _sessionState.value.activeTabId
@@ -605,6 +653,86 @@ class AuraGeckoEngineManager @Inject constructor(
         if (info.isPlaying) session.pause() else session.play()
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // YouTube section
+    // ---------------------------------------------------------------------------------------------
+
+    /** Creates the dedicated YouTube session on first use; loads [url] (or the YouTube home page). */
+    fun openYouTube(url: String? = null) {
+        engineScope.launch {
+            val existing = youTubeGeckoSession
+            if (existing != null && existing.isOpen) {
+                if (url != null) existing.loadUri(url)
+                return@launch
+            }
+            val session = buildSession(YOUTUBE_SESSION_ID, isPrivate = false, isDesktopMode = false)
+            session.open(getOrCreateRuntime())
+            session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
+            youTubeGeckoSession = session
+            session.loadUri(url ?: YOUTUBE_HOME_URL)
+            _youTubeSession.value = session
+        }
+    }
+
+    fun youTubeGoBack() {
+        youTubeGeckoSession?.goBack()
+    }
+
+    fun youTubeReload() {
+        val session = youTubeGeckoSession ?: return
+        if (_youTubeState.value.isLoading) session.stop() else session.reload()
+    }
+
+    fun youTubeGoHome() {
+        youTubeGeckoSession?.loadUri(YOUTUBE_HOME_URL)
+    }
+
+    fun exitYouTubeFullScreen() {
+        youTubeGeckoSession?.exitFullScreen()
+    }
+
+    private fun isYouTubeUrl(url: String): Boolean {
+        val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
+        return host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com") ||
+            host == "youtube-nocookie.com" || host.endsWith(".youtube-nocookie.com")
+    }
+
+    /**
+     * Asks the built-in extension to stretch the playing video over the whole page so that
+     * Picture-in-Picture shows only the video instead of a cropped copy of the page.
+     * Returns true when the page's content script was reachable.
+     */
+    fun setWebPipLayout(enabled: Boolean): Boolean {
+        val tabId = _webMedia.value.tabId
+        val owner = when {
+            tabId == YOUTUBE_SESSION_ID -> youTubeGeckoSession
+            tabId.isNotEmpty() -> activeSessions[tabId]
+            else -> _activeSession.value
+        } ?: return false
+        val port = extensionPorts[owner] ?: return false
+        return runCatching {
+            port.postMessage(JSONObject().put("type", "pipLayout").put("enabled", enabled))
+            true
+        }.getOrDefault(false)
+    }
+
+    fun playWebMedia() {
+        mediaSessions[_webMedia.value.tabId]?.play()
+    }
+
+    fun pauseWebMedia() {
+        mediaSessions[_webMedia.value.tabId]?.pause()
+    }
+
+    /** Skips to the next item of the page's playlist / suggested video (if the page supports it). */
+    fun webNextTrack() {
+        mediaSessions[_webMedia.value.tabId]?.nextTrack()
+    }
+
+    fun webPreviousTrack() {
+        mediaSessions[_webMedia.value.tabId]?.previousTrack()
+    }
+
     fun stopWebMedia() {
         mediaSessions[_webMedia.value.tabId]?.stop()
     }
@@ -672,6 +800,9 @@ class AuraGeckoEngineManager @Inject constructor(
             if (!preferencesDataSource.userSettings.first().clearSessionOnExit) return@launch
             _activeSession.value = null
             activeSessions.keys.toList().forEach { removeSession(it) }
+            _youTubeSession.value = null
+            runCatching { youTubeGeckoSession?.close() }
+            youTubeGeckoSession = null
             privateTabs.value = emptyList()
             clearPersistedBrowsingData()
             _sessionState.value = ActiveBrowserSessionState()
@@ -696,6 +827,17 @@ class AuraGeckoEngineManager @Inject constructor(
     private fun updateLive(tabId: String, transform: (TabLive) -> TabLive) {
         val updated = transform(liveStates[tabId] ?: TabLive())
         liveStates[tabId] = updated
+        if (tabId == YOUTUBE_SESSION_ID) {
+            _youTubeState.value = YouTubeAppState(
+                url = updated.url,
+                title = updated.title,
+                progress = updated.progress,
+                isLoading = updated.isLoading,
+                canGoBack = updated.canGoBack,
+                isFullScreen = updated.isFullScreen,
+            )
+            return
+        }
         if (tabId != _sessionState.value.activeTabId) return
         _sessionState.update {
             it.copy(
@@ -723,6 +865,10 @@ class AuraGeckoEngineManager @Inject constructor(
                 hasUserGesture: Boolean,
             ) {
                 val safeUrl = url ?: return
+                if (tabId == YOUTUBE_SESSION_ID) {
+                    updateLive(tabId) { it.copy(url = safeUrl) }
+                    return
+                }
                 updateLive(tabId) {
                     it.copy(
                         url = safeUrl,
@@ -770,6 +916,11 @@ class AuraGeckoEngineManager @Inject constructor(
             }
 
             override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                if (tabId == YOUTUBE_SESSION_ID) {
+                    // Stay inside the YouTube section for YouTube links; send everything else to a browser tab.
+                    if (isYouTubeUrl(uri)) session.loadUri(uri) else openNewTab(uri)
+                    return null
+                }
                 // target=_blank links and window.open(): the engine opens the returned session itself.
                 val newTabId = UUID.randomUUID().toString()
                 val newSession = buildSession(newTabId, isPrivate, isDesktopMode = false)
@@ -840,7 +991,7 @@ class AuraGeckoEngineManager @Inject constructor(
                 session: GeckoSession,
                 sessionState: GeckoSession.SessionState,
             ) {
-                if (isPrivate) return
+                if (isPrivate || tabId == YOUTUBE_SESSION_ID) return
                 pendingSessionStates[tabId] = sessionState
                 scheduleStateFlush()
             }
@@ -850,6 +1001,10 @@ class AuraGeckoEngineManager @Inject constructor(
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 val live = liveStates[tabId]
                 val resolvedTitle = title?.takeIf { it.isNotBlank() } ?: live?.url.orEmpty()
+                if (tabId == YOUTUBE_SESSION_ID) {
+                    updateLive(tabId) { it.copy(title = resolvedTitle) }
+                    return
+                }
                 updateLive(tabId) { it.copy(title = resolvedTitle) }
 
                 if (isPrivate) {
@@ -870,6 +1025,7 @@ class AuraGeckoEngineManager @Inject constructor(
             }
 
             override fun onCloseRequest(session: GeckoSession) {
+                if (tabId == YOUTUBE_SESSION_ID) return
                 closeTab(tabId)
             }
 
@@ -1044,6 +1200,8 @@ class AuraGeckoEngineManager @Inject constructor(
 
     private companion object {
         const val TAG = "AuraGeckoEngine"
+        const val YOUTUBE_SESSION_ID = "aura-youtube-app"
+        const val YOUTUBE_HOME_URL = "https://m.youtube.com/"
         const val STATE_FLUSH_DELAY_MS = 3_000L
         const val TRACKER_FLUSH_DELAY_MS = 2_000L
     }

@@ -2,6 +2,7 @@ package com.aura.browser.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -17,7 +18,7 @@ import com.aura.browser.feature.privacy.ui.PrivacyDashboardScreen
 import com.aura.browser.feature.settings.ui.SettingsScreen
 import com.aura.browser.feature.tabs.ui.TabsScreen
 import com.aura.browser.feature.video.ui.VideoPlayerScreen
-import com.aura.browser.feature.youtube.ui.YouTubeIntegrationScreen
+import com.aura.browser.feature.youtube.ui.YouTubeScreen
 
 /**
  * App navigation graph.
@@ -76,10 +77,7 @@ fun AuraNavHost(
         }
 
         composable(AuraDestination.YOUTUBE.route) {
-            YouTubeIntegrationScreen(
-                onOpenInBrowser = openInBrowser,
-                onRequestPip = onRequestPip,
-            )
+            YouTubeScreen(onRequestPip = onRequestPip)
         }
 
         composable(AuraDestination.MUSIC.route) {
@@ -128,5 +126,14 @@ fun AuraNavHost(
 fun NavHostController.openBrowser() {
     if (!popBackStack(AuraDestination.BROWSER.route, inclusive = false)) {
         navigate(AuraDestination.BROWSER.route) { launchSingleTop = true }
+    }
+}
+
+/** Switches to a top-level destination the same way the bottom bar does (keeps each tab's state). */
+fun NavHostController.navigateTopLevel(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

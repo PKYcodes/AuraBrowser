@@ -12,6 +12,7 @@ navigationCompose = "2.8.4"
 composeBom = "2025.02.00"
 geckoview = "140.0.20250707120347"
 media3 = "1.5.1"
+androidxMedia = "1.7.0"
 room = "2.6.1"
 datastore = "1.1.1"
 documentfile = "1.0.1"
@@ -25,6 +26,7 @@ espressoCore = "3.6.1"
 # AndroidX Core & Lifecycle
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-media = { group = "androidx.media", name = "media", version.ref = "androidxMedia" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

@@ -1,6 +1,5 @@
 package com.aura.browser.feature.browser.ui
 
-import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -66,7 +65,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,6 +74,7 @@ import com.aura.browser.core.database.entity.BookmarkEntity
 import com.aura.browser.core.designsystem.component.GlassCard
 import com.aura.browser.core.designsystem.component.GlassPillButton
 import com.aura.browser.core.designsystem.component.ImmersiveModeEffect
+import com.aura.browser.core.designsystem.component.LocalImmersiveMode
 import com.aura.browser.core.designsystem.theme.AuraColors
 import com.aura.browser.core.network.download.DownloadEvent
 import com.aura.browser.feature.browser.engine.AuraGeckoEngineManager
@@ -87,7 +86,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import org.mozilla.geckoview.GeckoView
 import javax.inject.Inject
 
 @HiltViewModel
@@ -157,6 +155,8 @@ fun BrowserScreen(
     var menuOpen by remember { mutableStateOf(false) }
     val snackbarHost = remember { SnackbarHostState() }
 
+    val immersive = LocalImmersiveMode.current
+    val hideChrome = state.isFullScreenMedia || immersive.inPip
     ImmersiveModeEffect(active = state.isFullScreenMedia)
 
     BackHandler(enabled = state.isFullScreenMedia || findVisible || state.canGoBack) {
@@ -195,7 +195,7 @@ fun BrowserScreen(
             .fillMaxSize()
             .background(AuraColors.DeepBackground),
     ) {
-        if (!state.isFullScreenMedia) {
+        if (!hideChrome) {
             AddressBar(
                 isPrivate = state.isPrivate,
                 isSecure = state.isSecureHttps,
@@ -253,31 +253,15 @@ fun BrowserScreen(
                 .weight(1f)
                 .fillMaxWidth(),
         ) {
-            val session = activeSession
-            if (session != null && session.isOpen) {
-                AndroidView(
-                    factory = { ctx ->
-                        GeckoView(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                            )
-                        }
-                    },
-                    update = { geckoView ->
-                        if (geckoView.session !== session) {
-                            geckoView.releaseSession()
-                            geckoView.setSession(session)
-                        }
-                    },
-                    onRelease = { geckoView -> geckoView.releaseSession() },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+            GeckoSessionView(
+                session = activeSession,
+                gesturesEnabled = state.isFullScreenMedia,
+                modifier = Modifier.fillMaxSize(),
+            )
             SnackbarHost(hostState = snackbarHost, modifier = Modifier.align(Alignment.BottomCenter))
         }
 
-        if (!state.isFullScreenMedia) {
+        if (!hideChrome) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

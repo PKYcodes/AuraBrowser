@@ -1,0 +1,44 @@
+/* Hidden only while the content script sets data-aura-hide-shorts="1" (best effort: YouTube markup changes). */
+html[data-aura-hide-shorts="1"] ytm-reel-shelf-renderer,
+html[data-aura-hide-shorts="1"] ytm-shorts-lockup-view-model,
+html[data-aura-hide-shorts="1"] ytm-shorts-lockup-view-model-v2,
+html[data-aura-hide-shorts="1"] ytd-reel-shelf-renderer,
+html[data-aura-hide-shorts="1"] ytd-rich-shelf-renderer[is-shorts],
+html[data-aura-hide-shorts="1"] ytm-rich-section-renderer:has(ytm-shorts-lockup-view-model),
+html[data-aura-hide-shorts="1"] ytm-pivot-bar-item-renderer:has(a[href^="/shorts"]) {
+  display: none !important;
+}
+
+/*
+ * Picture-in-Picture layout: while html.aura-pip is set, everything except the playing <video>
+ * is hidden and the video fills the viewport, so the PiP window shows the video only.
+ */
+html.aura-pip,
+html.aura-pip body {
+  background: #000 !important;
+  overflow: hidden !important;
+}
+
+html.aura-pip body * {
+  visibility: hidden !important;
+  transform: none !important;
+  filter: none !important;
+  contain: none !important;
+  perspective: none !important;
+  will-change: auto !important;
+}
+
+html.aura-pip video.aura-pip-video {
+  visibility: visible !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  z-index: 2147483647 !important;
+  object-fit: contain !important;
+  background: #000 !important;
+}

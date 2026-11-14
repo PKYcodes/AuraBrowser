@@ -15,6 +15,9 @@ import androidx.compose.runtime.setValue
 @Stable
 class ImmersiveModeState {
     var enabled: Boolean by mutableStateOf(false)
+
+    /** True while the activity is shown in a Picture-in-Picture window; screens hide their chrome. */
+    var inPip: Boolean by mutableStateOf(false)
 }
 
 val LocalImmersiveMode = compositionLocalOf { ImmersiveModeState() }
